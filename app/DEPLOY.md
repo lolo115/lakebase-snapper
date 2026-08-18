@@ -58,11 +58,35 @@ service principal registered as a Postgres role there.
 ## 2. Prerequisites
 
 - Databricks CLI ≥ 0.290 and a workspace with Lakebase (autoscaling `databricks postgres`).
-- A profile authenticated to the workspace (`databricks auth login ... --profile <p>`).
-  - For **log access** you need an **OAuth (U2M)** profile — a PAT profile returns
-    `OAuth Token not supported`. Create one: `databricks auth login --host <workspace-url> --profile <p>-oauth`.
 - `psql` (`brew install postgresql@16`) and `jq`.
 - Permission to create apps and to grant on the Lakebase project.
+- An **OAuth (U2M) CLI profile** — this is the `<PROFILE>` / `OAUTH_PROFILE` used everywhere
+  below. `configure.sh` and `databricks apps logs` mint an OAuth token, which a PAT profile
+  can't provide (it returns `OAuth Token not supported`).
+
+### Get an OAuth profile
+
+**Create one** (opens a browser for SSO and saves the profile):
+
+```bash
+databricks auth login --host https://<WORKSPACE-HOST> --profile <PROFILE>
+# example:
+# databricks auth login --host https://dbc-1234abcd-5678.cloud.databricks.com --profile my-oauth
+```
+
+**List the profiles you already have:**
+
+```bash
+databricks auth profiles
+```
+
+**Verify a profile is OAuth (not PAT)** — look for `AuthType: oauth`:
+
+```bash
+databricks auth describe -p <PROFILE>
+```
+
+Then use that name: `./configure.sh -p <PROFILE>`.
 
 Worked example values used below (replace with your own):
 
