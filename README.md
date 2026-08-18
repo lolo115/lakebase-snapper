@@ -34,7 +34,7 @@ Already set up in this directory:
 To recreate elsewhere:
 ```bash
 python3 -m venv .venv
-./.venv/bin/pip install --index-url https://pypi-proxy.cloud.databricks.com/simple "psycopg[binary]"
+./.venv/bin/pip install "psycopg[binary]"
 ```
 
 ## Deploy as an always-on Databricks App
