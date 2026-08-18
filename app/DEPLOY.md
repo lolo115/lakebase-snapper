@@ -8,6 +8,32 @@ the specific database(s) you want to monitor.
 
 ---
 
+## Quick start (recommended): `configure.sh`
+
+The fastest path. `app/configure.sh` queries the Databricks REST API with an OAuth token,
+fills every `<PLACEHOLDER>` in `app.yaml` for you, and offers to deploy at the end:
+
+```bash
+cd app
+./configure.sh -p <PROFILE>          # <PROFILE> must be an OAuth (U2M) profile
+```
+
+It will:
+1. Mint an OAuth token from your profile and call the REST API to discover your workspace,
+   Lakebase project, endpoint + host, and (if it already exists) the app's service principal.
+2. Let you pick the project/endpoint and the database to monitor.
+3. Write the resolved values into `app.yaml` (backing up the original to `app.yaml.bak`).
+4. **Offer to deploy** — create the app, grant its service principal, set up the repository
+   database and role, then sync & deploy — in one step. (Answer `y`, or pass `--deploy`.)
+
+Don't have an OAuth profile yet?
+`databricks auth login --host https://<WORKSPACE-HOST> --profile <PROFILE>`
+
+That's the whole flow. **The rest of this document is the manual walkthrough** — read it to
+understand each step, to fill values by hand, or to script your own automation.
+
+---
+
 ## 1. The mental model: repository vs. targets
 
 lakebase-snapper deals with **two different kinds of database**, and keeping them straight

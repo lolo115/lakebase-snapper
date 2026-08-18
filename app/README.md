@@ -9,8 +9,10 @@ dashboard.
 - **Workspace / profile:** your Databricks workspace + CLI profile (`<PROFILE>`)
 - **Repository DB:** `lakebase_snapper` (schema `snap`) on your Lakebase project
 
-> This is a template. Every environment-specific value appears as a `<PLACEHOLDER>`;
-> **DEPLOY.md** lists each one with the exact CLI/REST command to obtain it.
+> This is a template. Every environment-specific value appears as a `<PLACEHOLDER>`.
+> **Recommended:** run `./configure.sh -p <OAUTH_PROFILE>` — it discovers your settings via
+> the REST API, fills the placeholders in `app.yaml`, and can deploy for you. See
+> [DEPLOY.md](DEPLOY.md); it also documents how to obtain each value by hand.
 
 ## Architecture
 
@@ -40,6 +42,7 @@ Collection SQL is the same as the CLI: ASH from `pg_stat_activity` (state='activ
 | `static/index.html` | Plotly dashboard |
 | `app.yaml` | App command + env (targets, cadence, PG connection) |
 | `requirements.txt` | Deps — **`databricks-sdk>=0.132`** (older SDKs lack `w.postgres`) |
+| `configure.sh` | REST-driven setup — fills `app.yaml` placeholders via OAuth and can deploy |
 | `run_local.sh` | Run locally against Lakebase with your CLI profile |
 | `loadgen.py` | (in `../`) load generator for producing observable activity |
 
