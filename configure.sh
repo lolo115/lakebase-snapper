@@ -35,7 +35,8 @@ set -euo pipefail
 # ------------------------------------------------------------------ args + deps
 PROFILE="" ; APP="lakebase-snapper" ; PROJECT="" ; BRANCH="production" ; ENDPOINT_NAME="primary"
 REPO_DB="lakebase_snapper" ; TARGET_DB="postgres" ; DO_DEPLOY=0 ; ASSUME_YES=0
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # repo root
+APP_DIR="$HERE/app"                                     # the app lives in ./app
 
 die(){ echo "error: $*" >&2; exit 1; }
 have(){ command -v "$1" >/dev/null 2>&1; }
@@ -59,13 +60,16 @@ have databricks || die "the 'databricks' CLI is required"
 have jq || die "'jq' is required"
 have curl || die "'curl' is required"
 
+# Detect a usable controlling terminal once (so prompts degrade quietly when there isn't one).
+TTY_OK=0; { : </dev/tty; } 2>/dev/null && TTY_OK=1
+
 ask(){ # ask "prompt" "default" -> echoes answer
-  local ans; if [ "$ASSUME_YES" = 1 ] || [ ! -r /dev/tty ]; then echo "$2"; return; fi
+  local ans; if [ "$ASSUME_YES" = 1 ] || [ "$TTY_OK" != 1 ]; then echo "$2"; return; fi
   read -r -p "$1 [$2]: " ans </dev/tty || true; echo "${ans:-$2}"
 }
 confirm(){ # confirm "prompt" -> 0 if yes
   [ "$ASSUME_YES" = 1 ] && return 0
-  [ -r /dev/tty ] || return 1
+  [ "$TTY_OK" = 1 ] || return 1
   local ans; read -r -p "$1 [y/N]: " ans </dev/tty || true; [[ "$ans" =~ ^[Yy] ]]
 }
 
@@ -132,8 +136,8 @@ TARGET_DB="$(ask 'Database to monitor (SEED_TARGETS)' "$TARGET_DB")"
 TARGET_LABEL="$PROJECT / $TARGET_DB"
 
 # ------------------------------------------------------------------ write app.yaml
-YAML="$HERE/app.yaml"
-[ -f "$YAML" ] || die "app.yaml not found next to this script"
+YAML="$APP_DIR/app.yaml"
+[ -f "$YAML" ] || die "app.yaml not found in $APP_DIR (run this from the repo root)"
 cp "$YAML" "$YAML.bak"
 sed -i.tmp \
   -e "s|<LAKEBASE_ENDPOINT>|$ENDPOINT_PATH|g" \
@@ -211,7 +215,7 @@ SQL
 # 4. sync source + deploy
 echo "→ syncing source and deploying ..."
 WS="/Workspace/Users/$WHOAMI/$APP"
-databricks sync "$HERE" "$WS" --exclude .venv --exclude __pycache__ --exclude .git --exclude .databricks --full -p "$PROFILE"
+databricks sync "$APP_DIR" "$WS" --exclude .venv --exclude __pycache__ --exclude .git --exclude .databricks --full -p "$PROFILE"
 databricks apps deploy "$APP" --source-code-path "$WS" -p "$PROFILE"
 
 APP_URL="$(databricks apps get "$APP" -p "$PROFILE" -o json | jq -r '.url // empty')"

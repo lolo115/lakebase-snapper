@@ -179,8 +179,7 @@
   <div class="note"><span class="lbl">Recommended</span>
   <code>app/configure.sh</code> queries the Databricks REST API with an OAuth token, fills
   every placeholder in <code>app.yaml</code> for you, and offers to deploy — in one command.</div>
-<pre><code>cd app
-./configure.sh -p &lt;PROFILE&gt;        <span class="c"># an OAuth (U2M) profile</span></code></pre>
+<pre><code>./configure.sh -p &lt;PROFILE&gt;        <span class="c"># from the repo root; an OAuth (U2M) profile</span></code></pre>
   <p>It discovers your workspace, Lakebase project, endpoint &amp; host, and (if the app
   exists) its service principal; writes them into <code>app.yaml</code>; then asks to
   <strong>create → grant → set up the repo DB → sync &amp; deploy</strong>. No OAuth profile

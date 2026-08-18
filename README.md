@@ -37,6 +37,19 @@ python3 -m venv .venv
 ./.venv/bin/pip install --index-url https://pypi-proxy.cloud.databricks.com/simple "psycopg[binary]"
 ```
 
+## Deploy as an always-on Databricks App
+
+Beyond the CLI, `app/` packages the same collector as a **Databricks App** with a scheduler
+and a live Plotly dashboard. The quickest way to stand it up:
+
+```bash
+./configure.sh -p <OAUTH_PROFILE>    # discovers your Lakebase settings via the REST API,
+                                     # fills app/app.yaml, and offers to deploy
+```
+
+See [app/DEPLOY.md](app/DEPLOY.md) for the full guide (and how to obtain each value by hand)
+and [app/README.md](app/README.md) for the app architecture.
+
 ## Connect
 
 **Lakebase (default):** point it at a CLI profile + endpoint. It resolves the host, your

@@ -14,8 +14,7 @@ The fastest path. `app/configure.sh` queries the Databricks REST API with an OAu
 fills every `<PLACEHOLDER>` in `app.yaml` for you, and offers to deploy at the end:
 
 ```bash
-cd app
-./configure.sh -p <PROFILE>          # <PROFILE> must be an OAuth (U2M) profile
+./configure.sh -p <PROFILE>          # from the repo root; <PROFILE> must be an OAuth (U2M) profile
 ```
 
 It will:
