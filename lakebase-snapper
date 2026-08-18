@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Thin wrapper: run lakebase_snapper.py with the bundled venv.
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec "$here/.venv/bin/python" "$here/lakebase_snapper.py" "$@"

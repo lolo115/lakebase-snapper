@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>lakebase_snapper — Lakebase performance</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>📊</text></svg>">
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+<style>
+  :root{
+    --bg:#0f1420; --panel:#171d2b; --panel2:#1e2536; --line:#2a3348;
+    --fg:#e6ebf5; --muted:#93a1bd; --accent:#4c8dff;
+    --cpu:#3fb950; --io:#4c8dff; --lock:#f85149; --lwlock:#d29922;
+    --timeout:#ff9f40; --ipc:#a371f7; --client:#8b98b0; --other:#6e7681;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+       font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  header{display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+         padding:14px 20px;background:var(--panel);border-bottom:1px solid var(--line)}
+  header h1{font-size:16px;margin:0;font-weight:600;letter-spacing:.2px}
+  header h1 span{color:var(--muted);font-weight:400}
+  .controls{display:flex;gap:10px;align-items:center;margin-left:auto;flex-wrap:wrap}
+  select,button,input{background:var(--panel2);color:var(--fg);border:1px solid var(--line);
+        border-radius:7px;padding:7px 10px;font-size:13px}
+  button{cursor:pointer}
+  button:hover{border-color:var(--accent)}
+  .dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px}
+  main{padding:18px 20px;display:grid;gap:16px;grid-template-columns:repeat(12,1fr)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+  .card h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);
+           margin:0 0 10px}
+  .col12{grid-column:span 12}.col8{grid-column:span 8}.col6{grid-column:span 6}
+  .col4{grid-column:span 4}
+  @media(max-width:1000px){.col8,.col6,.col4{grid-column:span 12}}
+  .tiles{display:flex;gap:14px;flex-wrap:wrap}
+  .tile{flex:1;min-width:130px;background:var(--panel2);border:1px solid var(--line);
+        border-radius:10px;padding:12px 14px}
+  .tile .v{font-size:26px;font-weight:700}
+  .tile .k{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+  td.num{text-align:right;font-variant-numeric:tabular-nums}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:#cdd7ee}
+  .muted{color:var(--muted)}
+  .bar{height:6px;background:var(--panel2);border-radius:4px;overflow:hidden}
+  .bar>i{display:block;height:100%;background:var(--accent)}
+  .plot{width:100%;height:300px}
+  .plot.sm{height:260px}
+  #err{color:var(--lock);font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <h1>lakebase_snapper <span>· Lakebase performance</span></h1>
+  <div class="controls">
+    <label class="muted">Target</label>
+    <select id="target"></select>
+    <label class="muted">Window</label>
+    <select id="mins">
+      <option value="15">15 min</option>
+      <option value="60" selected>1 hour</option>
+      <option value="240">4 hours</option>
+      <option value="1440">24 hours</option>
+    </select>
+    <label class="muted">Auto</label>
+    <select id="refresh">
+      <option value="0">off</option>
+      <option value="5000">5s</option>
+      <option value="15000" selected>15s</option>
+      <option value="60000">60s</option>
+    </select>
+    <button id="reload">Refresh</button>
+    <span id="status" class="muted"></span>
+  </div>
+</header>
+
+<main>
+  <div class="card col12">
+    <div class="tiles" id="tiles"></div>
+    <div id="err"></div>
+  </div>
+
+  <div class="card col8">
+    <h2>Average Active Sessions by wait class</h2>
+    <div id="ashTimeline" class="plot"></div>
+  </div>
+  <div class="card col4">
+    <h2>Wait class mix</h2>
+    <div id="waitMix" class="plot"></div>
+  </div>
+
+  <div class="card col6">
+    <h2>Top SQL by active samples (ASH)</h2>
+    <div id="topSql" class="plot sm"></div>
+  </div>
+  <div class="card col6">
+    <h2>Load profile — transactions/s &amp; cache hit %</h2>
+    <div id="loadProfile" class="plot sm"></div>
+  </div>
+
+  <div class="card col12">
+    <h2>Latest snapshot diff — top SQL by execution time</h2>
+    <div id="snapDiffMeta" class="muted" style="margin-bottom:8px"></div>
+    <table id="snapDiff"><thead><tr>
+      <th>% time</th><th>exec ms</th><th>calls</th><th>ms/call</th><th>rows</th>
+      <th>query_id</th><th>query</th>
+    </tr></thead><tbody></tbody></table>
+  </div>
+</main>
+
+<script>
+const WAIT_COLORS = {
+  CPU:getCss('--cpu'), IO:getCss('--io'), Lock:getCss('--lock'), LWLock:getCss('--lwlock'),
+  Timeout:getCss('--timeout'), IPC:getCss('--ipc'), Client:getCss('--client'),
+  BufferPin:getCss('--other'), Extension:getCss('--other'), Activity:getCss('--other')
+};
+function getCss(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim();}
+function colorFor(w){return WAIT_COLORS[w]||getCss('--other');}
+const LAYOUT = {paper_bgcolor:'rgba(0,0,0,0)',plot_bgcolor:'rgba(0,0,0,0)',
+  font:{color:getCss('--fg'),size:12},margin:{l:48,r:16,t:10,b:36},
+  legend:{orientation:'h',y:-0.2,font:{size:11}},
+  xaxis:{gridcolor:getCss('--line'),zeroline:false},
+  yaxis:{gridcolor:getCss('--line'),zeroline:false}};
+const CONFIG = {displayModeBar:false,responsive:true};
+
+const $ = s=>document.querySelector(s);
+let timer=null;
+
+async function api(path){
+  const r = await fetch(path);
+  if(!r.ok) throw new Error(path+' -> '+r.status);
+  return r.json();
+}
+
+async function loadTargets(){
+  const ts = await api('/api/targets');
+  const sel = $('#target'); const cur = sel.value;
+  sel.innerHTML = ts.map(t=>`<option value="${t.id}" ${t.enabled?'':'data-off'}>`+
+     `${t.label}${t.enabled?'':' (disabled)'}</option>`).join('');
+  if(cur) sel.value = cur;
+  return ts;
+}
+
+function tid(){return parseInt($('#target').value);}
+function mins(){return parseInt($('#mins').value);}
+
+async function refresh(){
+  $('#err').textContent='';
+  if(isNaN(tid())){ $('#err').textContent='No target selected. Add one via /api/targets.'; return; }
+  $('#status').textContent='loading…';
+  try{
+    const m = mins();
+    const [sum, tl, wm, ts, lp, sd, st] = await Promise.all([
+      api(`/api/summary?target_id=${tid()}&mins=${m}`),
+      api(`/api/ash-timeline?target_id=${tid()}&mins=${m}&bucket=${bucketFor(m)}`),
+      api(`/api/waits?target_id=${tid()}&mins=${m}`),
+      api(`/api/top-sql?target_id=${tid()}&mins=${m}&limit=10`),
+      api(`/api/load-profile?target_id=${tid()}&mins=${Math.max(m,240)}`),
+      api(`/api/snap-diff?target_id=${tid()}&limit=12`),
+      api(`/api/status`)
+    ]);
+    renderTiles(sum, st);
+    renderTimeline(tl);
+    renderWaitMix(wm);
+    renderTopSql(ts);
+    renderLoadProfile(lp);
+    renderSnapDiff(sd);
+    $('#status').textContent='updated '+new Date().toLocaleTimeString();
+  }catch(e){ $('#err').textContent=String(e); $('#status').textContent=''; }
+}
+
+function bucketFor(m){ return m<=15?5 : m<=60?15 : m<=240?60 : 300; }
+
+function renderTiles(s, st){
+  const jobs = (st.jobs||[]).reduce((a,j)=>(a[j.id]=j.next_run,a),{});
+  const tiles=[
+    ['Avg Active Sessions', s.aas ?? 0],
+    ['Active-session rows', (s.total_rows||0).toLocaleString()],
+    ['Samples', (s.samples||0).toLocaleString()],
+    ['Collector', st.running?`sample ${st.sample_interval_secs}s / snap ${st.snapshot_interval_secs}s`:'stopped'],
+  ];
+  $('#tiles').innerHTML = tiles.map(([k,v])=>
+    `<div class="tile"><div class="v">${v}</div><div class="k">${k}</div></div>`).join('');
+}
+
+function renderTimeline(rows){
+  const classes=[...new Set(rows.map(r=>r.wait_class))];
+  const buckets=[...new Set(rows.map(r=>r.bucket))];
+  const idx={}; rows.forEach(r=>{idx[r.wait_class+'|'+r.bucket]=r.aas;});
+  const traces=classes.map(c=>({
+    x:buckets, y:buckets.map(b=>idx[c+'|'+b]||0),
+    name:c, type:'scatter', mode:'lines', stackgroup:'one',
+    line:{width:0.5,color:colorFor(c)}, fillcolor:colorFor(c)
+  }));
+  Plotly.react('ashTimeline', traces.length?traces:[{x:[],y:[]}],
+    {...LAYOUT, yaxis:{...LAYOUT.yaxis,title:'AAS',rangemode:'tozero'}}, CONFIG);
+}
+
+function renderWaitMix(rows){
+  const byClass={};
+  rows.forEach(r=>{byClass[r.wait_class]=(byClass[r.wait_class]||0)+r.c;});
+  const labels=Object.keys(byClass);
+  Plotly.react('waitMix', [{
+    type:'pie', hole:0.55, labels, values:labels.map(l=>byClass[l]),
+    marker:{colors:labels.map(colorFor)}, textinfo:'label+percent',
+    textfont:{size:11}, sort:true
+  }], {...LAYOUT, margin:{l:8,r:8,t:8,b:8}, showlegend:false}, CONFIG);
+}
+
+function renderTopSql(rows){
+  rows=[...rows].reverse();
+  const labels=rows.map(r=>{
+    const q=(r.query||'').replace(/\s+/g,' ').trim();
+    return (q.length>48?q.slice(0,48)+'…':q) || String(r.query_id);
+  });
+  Plotly.react('topSql', [{
+    type:'bar', orientation:'h',
+    x:rows.map(r=>Number(r.pct)), y:labels,
+    customdata:rows.map(r=>[String(r.query_id), r.c, (r.query||'')]),
+    hovertemplate:'query_id %{customdata[0]}<br>%{x}% of samples (%{customdata[1]} rows)'+
+                  '<br>%{customdata[2]}<extra></extra>',
+    marker:{color:getCss('--accent')}
+  }], {...LAYOUT, margin:{l:280,r:16,t:10,b:40},
+       xaxis:{...LAYOUT.xaxis,title:'% of active samples',type:'linear',rangemode:'tozero'},
+       yaxis:{...LAYOUT.yaxis,type:'category',automargin:true,tickfont:{size:10},
+              categoryorder:'array',categoryarray:labels}}, CONFIG);
+}
+
+function renderLoadProfile(rows){
+  const x=rows.map(r=>r.t);
+  Plotly.react('loadProfile', [
+    {x,y:rows.map(r=>r.tps),name:'tps',type:'scatter',mode:'lines+markers',
+     line:{color:getCss('--io')},yaxis:'y'},
+    {x,y:rows.map(r=>r.cache_hit_pct),name:'cache hit %',type:'scatter',mode:'lines+markers',
+     line:{color:getCss('--cpu')},yaxis:'y2'}
+  ], {...LAYOUT,
+      yaxis:{...LAYOUT.yaxis,title:'tps',rangemode:'tozero'},
+      yaxis2:{overlaying:'y',side:'right',title:'cache %',range:[0,100],gridcolor:'rgba(0,0,0,0)'}
+     }, CONFIG);
+}
+
+function renderSnapDiff(sd){
+  const tb=$('#snapDiff tbody');
+  if(!sd.available){
+    $('#snapDiffMeta').textContent='Need at least two snapshots — the scheduler takes one every few minutes.';
+    tb.innerHTML=''; return;
+  }
+  $('#snapDiffMeta').innerHTML=`window ${fmtT(sd.from)} → ${fmtT(sd.to)} · `+
+     `total DB exec time ${sd.total_exec_ms.toLocaleString()} ms`;
+  tb.innerHTML = sd.items.map(i=>`<tr>
+    <td class="num">${i.pct}%<div class="bar"><i style="width:${Math.min(i.pct,100)}%"></i></div></td>
+    <td class="num">${i.exec_ms.toLocaleString()}</td>
+    <td class="num">${i.calls.toLocaleString()}</td>
+    <td class="num">${i.ms_per_call.toLocaleString()}</td>
+    <td class="num">${i.rows.toLocaleString()}</td>
+    <td><code>${i.query_id}</code></td>
+    <td><code>${escapeHtml(i.query)}</code></td>
+  </tr>`).join('');
+}
+
+function fmtT(iso){return new Date(iso).toLocaleTimeString();}
+function escapeHtml(s){return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+
+function setupAutoRefresh(){
+  if(timer) clearInterval(timer);
+  const ms=parseInt($('#refresh').value);
+  if(ms>0) timer=setInterval(refresh, ms);
+}
+
+['target','mins'].forEach(id=>$('#'+id).addEventListener('change',refresh));
+$('#refresh').addEventListener('change',setupAutoRefresh);
+$('#reload').addEventListener('click',refresh);
+
+(async function init(){
+  await loadTargets();
+  await refresh();
+  setupAutoRefresh();
+})();
+</script>
+</body>
+</html>

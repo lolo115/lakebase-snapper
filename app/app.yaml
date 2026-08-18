@@ -1,0 +1,49 @@
+command:
+  - "python"
+  - "-m"
+  - "uvicorn"
+  - "app:app"
+  - "--host"
+  - "0.0.0.0"
+  - "--port"
+  - "8000"
+
+#
+# Fill in every <PLACEHOLDER> below before deploying. See DEPLOY.md §"Configuration
+# values & how to obtain them" for the exact CLI/REST command that yields each value.
+#
+env:
+  # --- repository (where snapshots + ASH samples are stored) ---
+  # Endpoint path of the Lakebase instance hosting the repository DB.
+  #   get: databricks postgres list-endpoints projects/<PROJECT>/branches/<BRANCH> -p <PROFILE> -o json
+  - name: REPO_ENDPOINT
+    value: '<LAKEBASE_ENDPOINT>'          # e.g. projects/<PROJECT>/branches/production/endpoints/primary
+  # Hostname of that endpoint.
+  #   get: databricks postgres list-endpoints <branch> -p <PROFILE> -o json | jq -r '.[0].status.hosts.host'
+  - name: PGHOST
+    value: '<PGHOST>'                     # e.g. ep-xxxx.database.<region>.cloud.databricks.com
+  - name: PGPORT
+    value: '5432'
+  - name: PGSSLMODE
+    value: 'require'
+  - name: REPO_DBNAME
+    value: 'lakebase_snapper'             # the dedicated repository database you created
+  - name: REPO_SCHEMA
+    value: 'snap'
+  # The app's service-principal client-id, which is also its Postgres role name.
+  #   get: databricks apps get <APP_NAME> -p <PROFILE> -o json | jq -r '.service_principal_client_id'
+  - name: PGUSER
+    value: '<SERVICE-PRINCIPAL-CLIENT-ID>'
+  # --- monitored targets (JSON array of {label, endpoint, dbname}) ---
+  # Point these at the database(s) you want to observe. See DEPLOY.md §"Target a specific database".
+  - name: SEED_TARGETS
+    value: '[{"label":"<MY-DB>","endpoint":"<LAKEBASE_ENDPOINT>","dbname":"<DATABASE>"}]'
+  # --- collection cadence ---
+  - name: SAMPLE_INTERVAL_SECS
+    value: '2'
+  - name: SNAPSHOT_INTERVAL_SECS
+    value: '300'
+  - name: RETENTION_DAYS
+    value: '7'
+  - name: INCLUDE_IDLE_IN_TXN
+    value: 'false'

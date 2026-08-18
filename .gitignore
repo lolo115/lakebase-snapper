@@ -1,0 +1,16 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+
+# Local SQLite repository (CLI)
+*.db
+
+# Databricks CLI sync state
+.databricks/
+
+# Env / secrets
+.env
+
+# OS
+.DS_Store
