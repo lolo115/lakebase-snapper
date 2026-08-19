@@ -407,11 +407,10 @@ function renderTopSql(rows, intervalSecs){
   });
   // ascending by total so the heaviest query sits at the top of the horizontal bars
   const items=Object.values(byq).sort((a,b)=>a.total-b.total);
-  // prefix the DB only when several databases appear (e.g. the instance-wide target)
-  const multiDb = new Set(items.map(it=>it.datname)).size > 1;
+  // Always show the source database on its own line above the (truncated) query text.
   const labels=items.map(it=>{ const q=(it.query||'').replace(/\s+/g,' ').trim();
-    const base=(q.length>48?q.slice(0,48)+'…':q) || String(it.query_id);
-    return multiDb ? `[${it.datname}] ${base}` : base; });
+    const base=(q.length>44?q.slice(0,44)+'…':q) || String(it.query_id);
+    return `<span style="color:#93a1bd">▸ ${it.datname}</span><br>${base}`; });
   // wait classes present; CPU first for a stable, readable stack order
   const klasses=[...new Set(rows.map(r=>r.wait_class))]
     .sort((a,b)=> a==='CPU'?-1 : b==='CPU'?1 : a.localeCompare(b));
