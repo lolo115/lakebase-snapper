@@ -54,8 +54,10 @@ CREATE TABLE IF NOT EXISTS snap_pgss (
     toplevel    boolean,
     query       text,
     metrics     jsonb,
+    datname     text,
     PRIMARY KEY (snap_id, queryid, userid, dbid, toplevel)
 );
+ALTER TABLE snap_pgss ADD COLUMN IF NOT EXISTS datname text;
 """
 
 
@@ -118,10 +120,10 @@ def insert_snapshot(target_id, snap_time, label, sys_obj, pgss_rows):
             (target_id, snap_time, label, Jsonb(sys_obj))).fetchone()[0]
         with conn.cursor() as cur:
             cur.executemany(
-                """INSERT INTO snap_pgss (snap_id, queryid, userid, dbid, toplevel, query, metrics)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s)
+                """INSERT INTO snap_pgss (snap_id, queryid, userid, dbid, toplevel, query, metrics, datname)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
                    ON CONFLICT DO NOTHING""",
-                [(snap_id, q, u, d, t, qt, Jsonb(m)) for (q, u, d, t, qt, m) in pgss_rows])
+                [(snap_id, q, u, d, t, qt, Jsonb(m), dn) for (q, u, d, t, qt, m, dn) in pgss_rows])
         conn.commit()
         return snap_id
 
@@ -315,7 +317,7 @@ def latest_snap_diff(target_id, limit=12):
         to_id, to_t = ids[0]
         from_id, from_t = ids[1]
         rows = conn.execute("""
-            SELECT b.queryid,
+            SELECT b.queryid, b.datname,
                    left(regexp_replace(b.query,'\\s+',' ','g'),120) q,
                    (b.metrics->>'total_exec_time')::float - COALESCE((a.metrics->>'total_exec_time')::float,0) d_exec,
                    (b.metrics->>'calls')::bigint - COALESCE((a.metrics->>'calls')::bigint,0) d_calls,
@@ -327,10 +329,11 @@ def latest_snap_diff(target_id, limit=12):
             WHERE b.snap_id=%s
         """, (from_id, to_id)).fetchall()
     items = []
-    for qid, q, d_exec, d_calls, d_rows in rows:
+    for qid, dn, q, d_exec, d_calls, d_rows in rows:
         if (d_calls or 0) <= 0 and (d_exec or 0) <= 0:
             continue
-        items.append({"query_id": qid, "query": q, "exec_ms": round(d_exec or 0, 1),
+        items.append({"query_id": qid, "datname": dn or "?", "query": q,
+                      "exec_ms": round(d_exec or 0, 1),
                       "calls": d_calls or 0, "rows": d_rows or 0,
                       "ms_per_call": round((d_exec or 0) / d_calls, 2) if d_calls else 0})
     total = sum(i["exec_ms"] for i in items) or 1.0

@@ -290,12 +290,15 @@ def collect_pgss(tc: TargetConn, scoped: bool = True):
     dbid_filter = ("AND dbid = (SELECT oid FROM pg_database WHERE datname = current_database())"
                    if scoped else "")
     sql = (f"SELECT queryid::text, userid, dbid, {toplevel}, left(query,4000), "
-           f"{', '.join(cols)} FROM pg_stat_statements "
+           f"{', '.join(cols)}, "
+           "(SELECT datname FROM pg_database d WHERE d.oid = pg_stat_statements.dbid) AS datname "
+           "FROM pg_stat_statements "
            "WHERE queryid IS NOT NULL "
            f"{dbid_filter}")
     out = []
+    ncols = len(cols)
     for r in tc.execute(sql):
         metrics = {c: (float(r[5 + i]) if isinstance(r[5 + i], Decimal) else r[5 + i])
                    for i, c in enumerate(cols)}
-        out.append((r[0], r[1], r[2], bool(r[3]), r[4], metrics))
+        out.append((r[0], r[1], r[2], bool(r[3]), r[4], metrics, r[5 + ncols]))
     return out, cols

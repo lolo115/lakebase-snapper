@@ -141,7 +141,7 @@
     <div id="snapDiffMeta" class="muted" style="margin-bottom:8px"></div>
     <table id="snapDiff"><thead><tr>
       <th>% time</th><th>exec ms</th><th>calls</th><th>ms/call</th><th>rows</th>
-      <th>query_id</th><th>query</th>
+      <th>db</th><th>query_id</th><th>query</th>
     </tr></thead><tbody></tbody></table>
   </div>
 </main>
@@ -482,6 +482,7 @@ function renderSnapDiff(sd){
     <td class="num">${i.calls.toLocaleString()}</td>
     <td class="num">${i.ms_per_call.toLocaleString()}</td>
     <td class="num">${i.rows.toLocaleString()}</td>
+    <td>${escapeHtml(i.datname||'?')}</td>
     <td><code>${i.query_id}</code></td>
     <td><code>${escapeHtml(i.query)}</code></td>
   </tr>`).join('');
