@@ -20,6 +20,12 @@
          padding:14px 20px;background:var(--panel);border-bottom:1px solid var(--line)}
   header h1{font-size:16px;margin:0;font-weight:600;letter-spacing:.2px}
   header h1 span{color:var(--muted);font-weight:400}
+  .tname{display:inline-flex;align-items:center;gap:8px;font-size:14px;
+         padding:5px 12px;border:1px solid var(--line);border-radius:20px;background:var(--panel2)}
+  .tname .dot{width:8px;height:8px;border-radius:50%;background:var(--accent)}
+  .tname b{font-weight:600}
+  .tname .sub{color:var(--muted);font-size:12px}
+  .tname:empty{display:none}
   .controls{display:flex;gap:10px;align-items:center;margin-left:auto;flex-wrap:wrap}
   select,button,input{background:var(--panel2);color:var(--fg);border:1px solid var(--line);
         border-radius:7px;padding:7px 10px;font-size:13px}
@@ -54,6 +60,7 @@
 <body>
 <header>
   <h1>lakebase_snapper <span>· Lakebase performance</span></h1>
+  <span id="targetName" class="tname"></span>
   <div class="controls">
     <label class="muted">Target</label>
     <select id="target"></select>
@@ -127,6 +134,20 @@ const CONFIG = {displayModeBar:false,responsive:true};
 
 const $ = s=>document.querySelector(s);
 let timer=null;
+let TARGETS=[];
+
+function activeTarget(){ return TARGETS.find(t=>t.id===tid()); }
+
+function updateTargetBanner(){
+  const t = activeTarget();
+  const el = $('#targetName');
+  if(!t){ el.innerHTML=''; return; }
+  // Project id sits between "projects/" and "/branches" in the endpoint path.
+  const proj = (t.endpoint.split('/branches/')[0].split('/').pop()) || '';
+  el.innerHTML = `<span class="dot"></span><b>${escapeHtml(t.label)}</b>`+
+    `<span class="sub">${escapeHtml(t.dbname)}${proj?' · '+escapeHtml(proj):''}</span>`;
+  el.title = `${t.label}\ndbname: ${t.dbname}\nendpoint: ${t.endpoint}`;
+}
 
 async function api(path){
   const r = await fetch(path);
@@ -136,10 +157,12 @@ async function api(path){
 
 async function loadTargets(){
   const ts = await api('/api/targets');
+  TARGETS = ts;
   const sel = $('#target'); const cur = sel.value;
   sel.innerHTML = ts.map(t=>`<option value="${t.id}" ${t.enabled?'':'data-off'}>`+
      `${t.label}${t.enabled?'':' (disabled)'}</option>`).join('');
   if(cur) sel.value = cur;
+  updateTargetBanner();
   return ts;
 }
 
@@ -148,6 +171,7 @@ function mins(){return parseInt($('#mins').value);}
 
 async function refresh(){
   $('#err').textContent='';
+  updateTargetBanner();
   if(isNaN(tid())){ $('#err').textContent='No target selected. Add one via /api/targets.'; return; }
   $('#status').textContent='loading…';
   try{
