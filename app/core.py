@@ -188,7 +188,8 @@ SELECT statement_timestamp(),
        EXTRACT(EPOCH FROM (clock_timestamp() - query_start))
 FROM pg_stat_activity
 WHERE pid <> pg_backend_pid()
-  AND application_name IS DISTINCT FROM 'lakebase_snapper_app/collector'
+  AND coalesce(application_name,'') NOT LIKE 'lakebase_snapper_app/%'  -- ignore our own conns
+  AND datname = current_database()        -- scope ASH to THIS target's database
   AND ( state = 'active' OR (%(idle_in_txn)s AND state = 'idle in transaction') )
 """
 
@@ -208,7 +209,7 @@ SELECT json_build_object(
             'temp_files', COALESCE(sum(temp_files),0),
             'temp_bytes', COALESCE(sum(temp_bytes),0),
             'deadlocks', COALESCE(sum(deadlocks),0))
-         FROM pg_stat_database WHERE datname IS NOT NULL)
+         FROM pg_stat_database WHERE datname = current_database())
 )
 """
 
@@ -240,7 +241,9 @@ def collect_pgss(tc: TargetConn):
     cols = [c for c in _PGSS_CANDIDATE_COLS if c in present]
     toplevel = "toplevel" if "toplevel" in present else "true AS toplevel"
     sql = (f"SELECT queryid::text, userid, dbid, {toplevel}, left(query,4000), "
-           f"{', '.join(cols)} FROM pg_stat_statements WHERE queryid IS NOT NULL")
+           f"{', '.join(cols)} FROM pg_stat_statements "
+           "WHERE queryid IS NOT NULL "
+           "AND dbid = (SELECT oid FROM pg_database WHERE datname = current_database())")
     out = []
     for r in tc.execute(sql):
         metrics = {c: (float(r[5 + i]) if isinstance(r[5 + i], Decimal) else r[5 + i])
