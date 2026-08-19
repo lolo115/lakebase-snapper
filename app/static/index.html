@@ -320,6 +320,18 @@ function renderTimeline(rows, cuSeries, cuNow, mins){
   // current value when the window has no snapshots yet (keeps the line always present).
   const cuTrace = buildCuTrace(cuSeries, cuNow, startMs, nowMs);
   if(cuTrace) traces.push(cuTrace);
+  // "CPU used" DERIVED FROM ASH: average sessions on CPU per bucket (each on-CPU backend
+  // ~= 1 vCPU). The platform's true used-vCPU metric isn't exposed to the app, so this is
+  // an ASH-based proxy, plotted absolute from 0 and comparable to the red CU ceiling.
+  if(classes.includes('CPU')){
+    const cpuIdx = idx['CPU'] || {};
+    traces.push({
+      x:gx, y:grid.map(b=>cpuIdx[b]||0),
+      name:'CPU used (from ASH)', type:'scatter', mode:'lines',
+      line:{color:'#e6ebf5', width:2},
+      hovertemplate:'CPU used ~%{y:.2f} (avg sessions on CPU, from ASH)<extra></extra>'
+    });
+  }
   Plotly.react('ashTimeline', traces.length?traces:[{x:[],y:[]}],
     {...LAYOUT, yaxis:{...LAYOUT.yaxis,title:'AAS · CU',rangemode:'tozero'},
      xaxis:{...LAYOUT.xaxis, range:[new Date(startMs), new Date(nowMs)]}}, CONFIG);
