@@ -103,7 +103,7 @@
   </div>
 
   <div class="card col6">
-    <h2>Top SQL by active samples (ASH)</h2>
+    <h2>Top SQL by CPU &amp; wait time (ASH)</h2>
     <div id="topSql" class="plot sm"></div>
   </div>
   <div class="card col6">
@@ -206,7 +206,7 @@ async function refresh(){
     renderTiles(sum, st);
     renderTimeline(tl, cuSeries, cuNow, m);
     renderWaitMix(wm);
-    renderTopSql(ts);
+    renderTopSql(ts, st.sample_interval_secs);
     renderLoadProfile(lp);
     renderSnapDiff(sd);
     $('#status').textContent='updated '+new Date().toLocaleTimeString();
@@ -293,23 +293,37 @@ function renderWaitMix(rows){
   }], {...LAYOUT, margin:{l:8,r:8,t:8,b:8}, showlegend:false}, CONFIG);
 }
 
-function renderTopSql(rows){
-  rows=[...rows].reverse();
-  const labels=rows.map(r=>{
-    const q=(r.query||'').replace(/\s+/g,' ').trim();
-    return (q.length>48?q.slice(0,48)+'…':q) || String(r.query_id);
+function renderTopSql(rows, intervalSecs){
+  // Each ASH sample represents ~sample-interval seconds of active time for that session,
+  // so estimated active time per (query, wait class) = sample_count * interval. Stack the
+  // per-SQL bar by wait class (CPU = on-CPU) to show CPU time vs wait time for each query.
+  const secPer = Number(intervalSecs) > 0 ? Number(intervalSecs) : 2;
+  const byq = {};
+  rows.forEach(r=>{ const k=String(r.query_id);
+    if(!byq[k]) byq[k]={query_id:r.query_id, query:'', total:0, parts:{}};
+    byq[k].parts[r.wait_class]=(byq[k].parts[r.wait_class]||0)+r.c;
+    byq[k].total+=r.c;
+    if(r.query) byq[k].query=r.query;
   });
-  Plotly.react('topSql', [{
-    type:'bar', orientation:'h',
-    x:rows.map(r=>Number(r.pct)), y:labels,
-    customdata:rows.map(r=>[String(r.query_id), r.c, (r.query||'')]),
-    hovertemplate:'query_id %{customdata[0]}<br>%{x}% of samples (%{customdata[1]} rows)'+
-                  '<br>%{customdata[2]}<extra></extra>',
-    marker:{color:getCss('--accent')}
-  }], {...LAYOUT, margin:{l:280,r:16,t:10,b:40},
-       xaxis:{...LAYOUT.xaxis,title:'% of active samples',type:'linear',rangemode:'tozero'},
-       yaxis:{...LAYOUT.yaxis,type:'category',automargin:true,tickfont:{size:10},
-              categoryorder:'array',categoryarray:labels}}, CONFIG);
+  // ascending by total so the heaviest query sits at the top of the horizontal bars
+  const items=Object.values(byq).sort((a,b)=>a.total-b.total);
+  const labels=items.map(it=>{ const q=(it.query||'').replace(/\s+/g,' ').trim();
+    return (q.length>48?q.slice(0,48)+'…':q) || String(it.query_id); });
+  // wait classes present; CPU first for a stable, readable stack order
+  const klasses=[...new Set(rows.map(r=>r.wait_class))]
+    .sort((a,b)=> a==='CPU'?-1 : b==='CPU'?1 : a.localeCompare(b));
+  const traces=klasses.map(k=>({
+    type:'bar', orientation:'h', name:k,
+    x:items.map(it=>(it.parts[k]||0)*secPer), y:labels,
+    marker:{color:colorFor(k)},
+    customdata:items.map(it=>String(it.query_id)),
+    hovertemplate:'query_id %{customdata}<br>'+k+': %{x:.1f}s active (est.)<extra></extra>'
+  }));
+  Plotly.react('topSql', traces.length?traces:[{x:[],y:[],type:'bar'}],
+    {...LAYOUT, barmode:'stack', margin:{l:280,r:16,t:10,b:40},
+     xaxis:{...LAYOUT.xaxis,title:'active time (s, est.)',type:'linear',rangemode:'tozero'},
+     yaxis:{...LAYOUT.yaxis,type:'category',automargin:true,tickfont:{size:10},
+            categoryorder:'array',categoryarray:labels}}, CONFIG);
 }
 
 function renderLoadProfile(rows){

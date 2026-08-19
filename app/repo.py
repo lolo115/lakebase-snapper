@@ -166,19 +166,29 @@ def wait_mix(target_id, since_min):
 
 
 def top_sql_ash(target_id, since_min, limit=10):
+    """Active-sample breakdown by wait class (CPU = on-CPU) for the top `limit` queries.
+
+    Returns flat rows [{query_id, wait_class, c, query}] for the top queries by total
+    active samples, so the UI can stack CPU time vs each wait class per SQL. Estimated
+    active time per segment is c * SAMPLE_INTERVAL_SECS (computed client-side)."""
     sql = """
-    WITH tot AS (SELECT count(*) n FROM ash_samples
-                 WHERE target_id=%(t)s AND sample_time >= now() - make_interval(mins => %(m)s))
-    SELECT query_id,
-           count(*) c,
-           round(100.0*count(*)/NULLIF((SELECT n FROM tot),0),1) pct,
-           max(left(regexp_replace(query, '\\s+', ' ', 'g'), 110)) q
-    FROM ash_samples
-    WHERE target_id=%(t)s AND sample_time >= now() - make_interval(mins => %(m)s)
-    GROUP BY query_id ORDER BY c DESC LIMIT %(l)s
+    WITH win AS (
+      SELECT query_id, COALESCE(wait_class,'CPU') AS klass, query
+      FROM ash_samples
+      WHERE target_id=%(t)s AND sample_time >= now() - make_interval(mins => %(m)s)
+        AND query_id IS NOT NULL
+    ),
+    top AS (
+      SELECT query_id, count(*) c FROM win GROUP BY query_id ORDER BY c DESC LIMIT %(l)s
+    )
+    SELECT w.query_id, w.klass, count(*) c,
+           max(left(regexp_replace(w.query, '\\s+', ' ', 'g'), 110)) q
+    FROM win w JOIN top t USING (query_id)
+    GROUP BY w.query_id, w.klass
+    ORDER BY w.query_id
     """
     with repo_pool.connection() as conn:
-        return [dict(zip(("query_id", "c", "pct", "query"), r))
+        return [dict(zip(("query_id", "wait_class", "c", "query"), r))
                 for r in conn.execute(sql, {"t": target_id, "m": since_min, "l": limit}).fetchall()]
 
 
