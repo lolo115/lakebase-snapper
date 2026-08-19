@@ -274,7 +274,7 @@ async function refresh(){
       api(`/api/waits?target_id=${tid()}&mins=${m}&include_idle=1`),
       api(`/api/top-sql?target_id=${tid()}&mins=${m}&limit=10`),
       api(`/api/load-profile?target_id=${tid()}&mins=${Math.max(m,240)}`),
-      api(`/api/snap-diff?target_id=${tid()}&limit=12`),
+      api(`/api/snap-diff?target_id=${tid()}&mins=${m}&limit=12`),
       api(`/api/status`)
     ]);
     renderTiles(sum, st);

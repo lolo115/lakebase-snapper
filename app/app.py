@@ -222,9 +222,9 @@ def api_load_profile(target_id: int, mins: int = 240):
 
 
 @app.get("/api/snap-diff")
-def api_snap_diff(target_id: int, limit: int = 12):
+def api_snap_diff(target_id: int, mins: int = 60, limit: int = 12):
     _require_target(target_id)
-    return repo.latest_snap_diff(target_id, limit)
+    return repo.latest_snap_diff(target_id, mins, limit)
 
 
 # ----------------------------------------------------------------- static UI

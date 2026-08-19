@@ -306,16 +306,18 @@ def current_max_cu(target_id):
     return {"max_cu": float(r[0]) if r and r[0] is not None else None}
 
 
-def latest_snap_diff(target_id, limit=12):
-    """Top SQL by execution-time delta between the two most recent snapshots."""
+def latest_snap_diff(target_id, since_min=60, limit=12):
+    """Top SQL by execution-time delta between the first and last snapshot in the
+    selected window (so it tracks the dashboard's time-window selector)."""
     with repo_pool.connection() as conn:
         ids = conn.execute(
-            "SELECT snap_id, snap_time FROM snapshots WHERE target_id=%s ORDER BY snap_time DESC LIMIT 2",
-            (target_id,)).fetchall()
+            "SELECT snap_id, snap_time FROM snapshots WHERE target_id=%s "
+            "AND snap_time >= now() - make_interval(mins => %s) ORDER BY snap_time",
+            (target_id, since_min)).fetchall()
         if len(ids) < 2:
             return {"available": False}
-        to_id, to_t = ids[0]
-        from_id, from_t = ids[1]
+        from_id, from_t = ids[0]
+        to_id, to_t = ids[-1]
         rows = conn.execute("""
             SELECT b.queryid, b.datname,
                    left(regexp_replace(b.query,'\\s+',' ','g'),120) q,
