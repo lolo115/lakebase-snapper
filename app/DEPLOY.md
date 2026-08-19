@@ -243,6 +243,12 @@ Targets are a JSON array in `SEED_TARGETS`. Each entry:
 { "label": "human name", "endpoint": "projects/<p>/branches/<b>/endpoints/<e>", "dbname": "<database>" }
 ```
 
+> **Per-database `pg_stat_statements`.** ASH, the load profile, and the CU line work for any
+> target out of the box. **Top SQL** additionally needs the `pg_stat_statements` view to
+> exist *in that database* (it's per-database), so run once per monitored database:
+> `CREATE EXTENSION IF NOT EXISTS pg_stat_statements;`. Without it the app still snapshots
+> (CU + load profile keep working); only the top-SQL panel stays empty for that database.
+
 ### 4.1 A database on the SAME instance as the repository
 
 Nothing extra to grant (the SP already has `pg_monitor` on this instance from §3.4). Just
