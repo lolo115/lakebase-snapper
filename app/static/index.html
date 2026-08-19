@@ -320,8 +320,13 @@ function renderLoadProfile(rows){
     {x,y:rows.map(r=>r.cache_hit_pct),name:'cache hit %',type:'scatter',mode:'lines+markers',
      line:{color:getCss('--cpu')},yaxis:'y2'}
   ], {...LAYOUT,
-      yaxis:{...LAYOUT.yaxis,title:'tps',rangemode:'tozero'},
-      yaxis2:{overlaying:'y',side:'right',title:'cache %',range:[0,100],gridcolor:'rgba(0,0,0,0)'}
+      // Wider right margin + automargin on the right axis keeps its title clear of the
+      // tick numbers; a fixed [0,100] range with a % suffix shows a full "100%" at the top.
+      margin:{l:52,r:64,t:10,b:36},
+      yaxis:{...LAYOUT.yaxis,title:'tps',rangemode:'tozero',automargin:true},
+      yaxis2:{overlaying:'y',side:'right',title:{text:'cache hit %',standoff:8},
+              range:[0,100],dtick:20,ticksuffix:'%',automargin:true,
+              gridcolor:'rgba(0,0,0,0)',zeroline:false}
      }, CONFIG);
 }
 
