@@ -188,7 +188,7 @@ SELECT statement_timestamp(),
        EXTRACT(EPOCH FROM (clock_timestamp() - query_start))
 FROM pg_stat_activity
 WHERE pid <> pg_backend_pid()
-  AND coalesce(application_name,'') NOT LIKE 'lakebase_snapper_app/%'  -- ignore our own conns
+  AND coalesce(application_name,'') NOT LIKE 'lakebase_snapper_app/%%'  -- doubled to a literal percent (parameterized query); ignore our own connections
   AND datname = current_database()        -- scope ASH to THIS target's database
   AND ( state = 'active' OR (%(idle_in_txn)s AND state = 'idle in transaction') )
 """
