@@ -188,10 +188,11 @@ async function refresh(){
   $('#status').textContent='loading…';
   try{
     const m = mins();
-    const [sum, tl, cu, wm, ts, lp, sd, st] = await Promise.all([
+    const [sum, tl, cuNow, cuSeries, wm, ts, lp, sd, st] = await Promise.all([
       api(`/api/summary?target_id=${tid()}&mins=${m}`),
       api(`/api/ash-timeline?target_id=${tid()}&mins=${m}&bucket=${bucketFor(m)}`),
       api(`/api/cu-current?target_id=${tid()}`),
+      api(`/api/cu-timeline?target_id=${tid()}&mins=${m}`),
       api(`/api/waits?target_id=${tid()}&mins=${m}`),
       api(`/api/top-sql?target_id=${tid()}&mins=${m}&limit=10`),
       api(`/api/load-profile?target_id=${tid()}&mins=${Math.max(m,240)}`),
@@ -199,7 +200,7 @@ async function refresh(){
       api(`/api/status`)
     ]);
     renderTiles(sum, st);
-    renderTimeline(tl, cu, m);
+    renderTimeline(tl, cuSeries, cuNow, m);
     renderWaitMix(wm);
     renderTopSql(ts);
     renderLoadProfile(lp);
@@ -222,7 +223,35 @@ function renderTiles(s, st){
     `<div class="tile"><div class="v">${v}</div><div class="k">${k}</div></div>`).join('');
 }
 
-function renderTimeline(rows, cu, mins){
+// Build the CU-ceiling step trace from the per-snapshot cu-timeline. Points are anchored at
+// the window edges (first value held back to the start, last value extended to now) and the
+// 'hv' shape holds each value until the next snapshot, so a change shows as a vertical step
+// at the snapshot where the new CU was first observed. With no in-window snapshots it falls
+// back to a flat line at the current configured value.
+function buildCuTrace(cuSeries, cuNow, startMs, nowMs){
+  const pts = (cuSeries||[])
+    .filter(p=>p.max_cu!=null)
+    .map(p=>({t:new Date(p.t).getTime(), v:Number(p.max_cu)}))
+    .filter(p=>p.t>=startMs && p.t<=nowMs)
+    .sort((a,b)=>a.t-b.t);
+  let xs, ys;
+  if(pts.length){
+    xs=[new Date(startMs)]; ys=[pts[0].v];                       // hold first value to window start
+    for(const p of pts){ xs.push(new Date(p.t)); ys.push(p.v); }
+    xs.push(new Date(nowMs)); ys.push(pts[pts.length-1].v);      // extend last value to now
+  } else if(cuNow && cuNow.max_cu!=null){
+    xs=[new Date(startMs), new Date(nowMs)]; ys=[cuNow.max_cu, cuNow.max_cu];
+  } else {
+    return null;
+  }
+  return {
+    x:xs, y:ys, name:'CU (max configured)', type:'scatter', mode:'lines',
+    line:{color:'#ff3b30', width:2, dash:'dot', shape:'hv'},
+    hovertemplate:'CU max: %{y}<extra></extra>'
+  };
+}
+
+function renderTimeline(rows, cuSeries, cuNow, mins){
   // Build a contiguous, epoch-aligned bucket grid across the whole window so the chart is
   // continuous (idle buckets show 0) and the time axis is stable on every refresh.
   const bms = bucketFor(mins)*1000;
@@ -238,16 +267,12 @@ function renderTimeline(rows, cu, mins){
     name:c, type:'scatter', mode:'lines', stackgroup:'one',
     line:{width:0.5,color:colorFor(c)}, fillcolor:colorFor(c)
   }));
-  // Provisioned CU ceiling as a continuous horizontal reference across the whole window
-  // (endpoint-level value, so it's identical and always present for every target).
-  if(cu && cu.max_cu!=null){
-    traces.push({
-      x:[new Date(startMs), new Date(nowMs)], y:[cu.max_cu, cu.max_cu],
-      name:'CU (max configured)', type:'scatter', mode:'lines',
-      line:{color:'#ff3b30', width:2, dash:'dot'},
-      hovertemplate:'CU max: %{y}<extra></extra>'
-    });
-  }
+  // Provisioned CU ceiling as a STEP line across the window: it holds each snapshot's
+  // configured max CU until the next snapshot and jumps only when CU actually changed,
+  // so a CU change is visible at the time it happened. Falls back to a flat line at the
+  // current value when the window has no snapshots yet (keeps the line always present).
+  const cuTrace = buildCuTrace(cuSeries, cuNow, startMs, nowMs);
+  if(cuTrace) traces.push(cuTrace);
   Plotly.react('ashTimeline', traces.length?traces:[{x:[],y:[]}],
     {...LAYOUT, yaxis:{...LAYOUT.yaxis,title:'AAS · CU',rangemode:'tozero'},
      xaxis:{...LAYOUT.xaxis, range:[new Date(startMs), new Date(nowMs)]}}, CONFIG);
