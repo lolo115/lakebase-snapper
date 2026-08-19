@@ -294,6 +294,9 @@ def collect_pgss(tc: TargetConn, scoped: bool = True):
            "(SELECT datname FROM pg_database d WHERE d.oid = pg_stat_statements.dbid) AS datname "
            "FROM pg_stat_statements "
            "WHERE queryid IS NOT NULL "
+           # Skip our own collector/repo statements (run by the app's role, current_user),
+           # the pg_stat_statements analogue of the ASH application_name exclusion.
+           "AND userid <> (SELECT oid FROM pg_roles WHERE rolname = current_user) "
            f"{dbid_filter}")
     out = []
     ncols = len(cols)
