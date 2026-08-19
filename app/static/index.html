@@ -111,22 +111,23 @@
     <div id="err"></div>
   </div>
 
-  <div class="card col8">
+  <div class="card col12">
     <h2>Average Active Sessions by wait class</h2>
-    <div id="ashTimeline" class="plot"></div>
-  </div>
-  <div class="card col4">
-    <h2>Wait class mix (active)</h2>
-    <div id="waitMix" class="plot"></div>
+    <div id="ashTimeline" class="plot md"></div>
   </div>
 
-  <div class="card col8">
+  <div class="card col6">
+    <h2>Wait class mix (active)</h2>
+    <div id="waitMix" class="plot md"></div>
+  </div>
+  <div class="card col6">
+    <h2>Wait class mix (incl. idle)</h2>
+    <div id="waitMixIdle" class="plot md"></div>
+  </div>
+
+  <div class="card col12">
     <h2>Top SQL by CPU &amp; wait time (ASH)</h2>
     <div id="topSql" class="plot lg"></div>
-  </div>
-  <div class="card col4">
-    <h2>Wait class mix (incl. idle)</h2>
-    <div id="waitMixIdle" class="plot"></div>
   </div>
 
   <div class="card col12">
@@ -307,7 +308,7 @@ function updateCollControls(st){
   const pill=$('#collState'), btn=$('#collToggle');
   pill.textContent='Collection: '+(on?'on':'off');
   pill.className='pill '+(on?'on':'off');
-  btn.textContent = on?'Stop':'Start';
+  btn.textContent = on?'Stop auto collection':'Start auto collection';
   btn.className = on?'danger':'go';
 }
 
@@ -504,7 +505,7 @@ $('#reload').addEventListener('click',refresh);
 
 // Start/stop background collection (stopping drops connections so the endpoint can sleep).
 $('#collToggle').addEventListener('click', async ()=>{
-  const btn=$('#collToggle'); const turnOn = btn.textContent==='Start';
+  const btn=$('#collToggle'); const turnOn = btn.textContent.startsWith('Start');
   btn.disabled=true; $('#err').textContent='';
   try{
     const r=await fetch('/api/collection',{method:'POST',
