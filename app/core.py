@@ -261,7 +261,20 @@ def collect_ash(tc: TargetConn, include_idle_in_txn: bool, scoped: bool = True,
 
 def collect_sys(tc: TargetConn, scoped: bool = True):
     dbf = "datname = current_database()" if scoped else "datname IS NOT NULL"
-    return tc.execute(SYS_SQL_TMPL.replace("{DBFILTER}", dbf))[0][0]
+    sys = tc.execute(SYS_SQL_TMPL.replace("{DBFILTER}", dbf))[0][0]
+    # Neon Local File Cache (LFC) hit/miss counters — endpoint-wide, cumulative. Exposed by
+    # the `neon` extension's neon_lfc_stats view; ignored gracefully where it isn't present.
+    try:
+        rows = tc.execute("SELECT lfc_key, lfc_value FROM neon_lfc_stats "
+                          "WHERE lfc_key IN ('file_cache_hits','file_cache_misses')")
+        lfc = {k: int(v) for k, v in rows}
+        if lfc:
+            sys = dict(sys)
+            sys["lfc"] = {"hits": lfc.get("file_cache_hits", 0),
+                          "misses": lfc.get("file_cache_misses", 0)}
+    except Exception:
+        pass
+    return sys
 
 
 def collect_pgss(tc: TargetConn, scoped: bool = True):

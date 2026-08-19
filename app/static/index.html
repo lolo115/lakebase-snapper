@@ -17,7 +17,8 @@
   body{margin:0;background:var(--bg);color:var(--fg);
        font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
   header{display:flex;align-items:center;gap:16px;flex-wrap:wrap;
-         padding:14px 20px;background:var(--panel);border-bottom:1px solid var(--line)}
+         padding:14px 20px;background:var(--panel);border-bottom:1px solid var(--line);
+         position:sticky;top:0;z-index:20}
   header h1{font-size:16px;margin:0;font-weight:600;letter-spacing:.2px}
   header h1 span{color:var(--muted);font-weight:400}
   .tname{display:inline-flex;align-items:center;gap:8px;font-size:14px;
@@ -450,8 +451,10 @@ function renderLoadProfile(rows){
     {x,y:rows.map(r=>r.tps),name:'tps',type:'scatter',mode:'lines+markers',
      line:{color:getCss('--io'),width:2},marker:{size:5},
      fill:'tozeroy',fillgradient:areaGradient(getCss('--io')),yaxis:'y'},
-    {x,y:rows.map(r=>r.cache_hit_pct),name:'cache hit %',type:'scatter',mode:'lines+markers',
-     line:{color:getCss('--cpu'),width:2},marker:{size:5},yaxis:'y2'}
+    {x,y:rows.map(r=>r.cache_hit_pct),name:'buffer cache hit %',type:'scatter',mode:'lines+markers',
+     line:{color:getCss('--cpu'),width:2},marker:{size:5},yaxis:'y2'},
+    {x,y:rows.map(r=>r.lfc_hit_pct),name:'LFC hit %',type:'scatter',mode:'lines+markers',
+     line:{color:getCss('--lwlock'),width:2},marker:{size:5},yaxis:'y2',connectgaps:false}
   ], {...LAYOUT,
       // Wider right margin + automargin on the right axis keeps its title clear of the
       // tick numbers; a fixed [0,100] range with a % suffix shows a full "100%" at the top.

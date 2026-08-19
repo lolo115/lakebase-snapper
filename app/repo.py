@@ -231,7 +231,9 @@ def load_profile(target_id, since_min):
              (sys->'db'->>'blks_read')::bigint br,
              (sys->'db'->>'blks_hit')::bigint bh,
              (sys->'db'->>'temp_bytes')::bigint tb,
-             (sys->'db'->>'tup_returned')::bigint tr
+             (sys->'db'->>'tup_returned')::bigint tr,
+             (sys->'lfc'->>'hits')::bigint lh,
+             (sys->'lfc'->>'misses')::bigint lm
       FROM snapshots
       WHERE target_id=%s AND snap_time >= now() - make_interval(mins => %s)
       ORDER BY snap_time
@@ -243,19 +245,23 @@ def load_profile(target_id, since_min):
              br - lag(br) OVER w dbr,
              bh - lag(bh) OVER w dbh,
              tb - lag(tb) OVER w dtb,
-             tr - lag(tr) OVER w dtr
+             tr - lag(tr) OVER w dtr,
+             lh - lag(lh) OVER w dlh,
+             lm - lag(lm) OVER w dlm
       FROM s WINDOW w AS (ORDER BY snap_time)
     )
     SELECT to_char(snap_time AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') t,
            round((dxc/NULLIF(secs,0))::numeric,2) tps,
            CASE WHEN (dbr+dbh)>0 THEN round(100.0*dbh/(dbr+dbh),2) ELSE NULL END cache_hit_pct,
+           CASE WHEN (dlh+dlm)>0 THEN round(100.0*dlh/(dlh+dlm),2) ELSE NULL END lfc_hit_pct,
            round((dtb/NULLIF(secs,0))::numeric,0) temp_bytes_per_s,
            round((dtr/NULLIF(secs,0))::numeric,0) tup_returned_per_s
     FROM d WHERE secs IS NOT NULL AND secs > 0 AND dxc >= 0
     ORDER BY t
     """
     with repo_pool.connection() as conn:
-        return [dict(zip(("t", "tps", "cache_hit_pct", "temp_bytes_per_s", "tup_returned_per_s"), r))
+        return [dict(zip(("t", "tps", "cache_hit_pct", "lfc_hit_pct",
+                          "temp_bytes_per_s", "tup_returned_per_s"), r))
                 for r in conn.execute(sql, (target_id, since_min)).fetchall()]
 
 
