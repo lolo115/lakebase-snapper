@@ -158,7 +158,15 @@ function getCss(v){return getComputedStyle(document.documentElement).getProperty
 function colorFor(w){return WAIT_COLORS[w]||getCss('--other');}
 // System/maintenance databases (postgres, template*): traffic here is internal maintenance,
 // not application workload, so it's flagged (amber + ⚙) in Top SQL and the snapshot diff.
-function isMaintDb(db){ db=(db||''); return db==='postgres' || db.startsWith('template'); }
+function isMaintDb(db){ db=(db||''); return db==='postgres' || db==='system' || db.startsWith('template'); }
+// Resolve a usable DB name. Use the captured value when present; for a single-database
+// target, fall back to that target's database (legacy samples had no datname); otherwise
+// (instance-wide target) label it "system" for background/unattributed statements.
+function dbNameOrFallback(db){
+  if(db && db!=='?') return db;
+  const t=activeTarget();
+  return (t && t.dbname && t.dbname!=='*') ? t.dbname : 'system';
+}
 // #rrggbb -> rgba() with alpha (passes through rgb()/named colors unchanged)
 function rgba(c, a){
   c=(c||'').trim();
@@ -403,7 +411,7 @@ function renderTopSql(rows, intervalSecs){
   // per-SQL bar by wait class (CPU = on-CPU) to show CPU time vs wait time for each query.
   const secPer = Number(intervalSecs) > 0 ? Number(intervalSecs) : 2;
   const byq = {};
-  rows.forEach(r=>{ const db=r.datname||'?'; const k=r.query_id+'|'+db;
+  rows.forEach(r=>{ const db=dbNameOrFallback(r.datname); const k=r.query_id+'|'+db;
     if(!byq[k]) byq[k]={query_id:r.query_id, datname:db, query:'', total:0, parts:{}};
     byq[k].parts[r.wait_class]=(byq[k].parts[r.wait_class]||0)+r.c;
     byq[k].total+=r.c;
@@ -482,11 +490,11 @@ function renderSnapDiff(sd){
   }
   let meta=`window ${fmtT(sd.from)} → ${fmtT(sd.to)} · `+
      `total DB exec time ${sd.total_exec_ms.toLocaleString()} ms`;
-  if(sd.items.some(i=>isMaintDb(i.datname)))
+  if(sd.items.some(i=>isMaintDb(dbNameOrFallback(i.datname))))
     meta+=` · <span style="color:var(--lwlock)">⚙ amber = internal maintenance / system DB</span>`;
   $('#snapDiffMeta').innerHTML=meta;
   tb.innerHTML = sd.items.map(i=>{
-    const db=i.datname||'?'; const maint=isMaintDb(db);
+    const db=dbNameOrFallback(i.datname); const maint=isMaintDb(db);
     return `<tr>
     <td class="num">${i.pct}%<div class="bar"><i style="width:${Math.min(i.pct,100)}%"></i></div></td>
     <td class="num">${i.exec_ms.toLocaleString()}</td>
