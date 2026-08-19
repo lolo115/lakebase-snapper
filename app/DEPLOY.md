@@ -249,6 +249,12 @@ Targets are a JSON array in `SEED_TARGETS`. Each entry:
 > `CREATE EXTENSION IF NOT EXISTS pg_stat_statements;`. Without it the app still snapshots
 > (CU + load profile keep working); only the top-SQL panel stays empty for that database.
 
+> **Per-database `neon` extension (LFC hit %).** The load profile's *LFC hit %* line reads
+> Neon's Local File Cache stats via `neon_lfc_stats`. Enable it once per monitored database:
+> `CREATE EXTENSION IF NOT EXISTS neon; GRANT SELECT ON neon_lfc_stats TO "<SERVICE-PRINCIPAL-CLIENT-ID>";`.
+> Optional: everything else works without it; only the LFC line stays empty for that database.
+> Top SQL also shows the source **database** per statement (useful on the instance-wide target).
+
 > **Instance-wide (all databases) target.** Use the sentinel `"dbname": "*"` to get an
 > aggregate target that is *not* scoped to one database — ASH, load profile/tps, and top
 > SQL then sum across every database on the endpoint. The collector connects through the
@@ -328,13 +334,16 @@ Runtime-added targets persist in the repo `targets` table. `SEED_TARGETS` is onl
 | `SNAPSHOT_INTERVAL_SECS` | `300` | Cumulative-counter snapshot interval |
 | `RETENTION_DAYS` | `7` | Age at which samples/snapshots are purged (6-hourly job) |
 | `INCLUDE_IDLE_IN_TXN` | `false` | Also sample `idle in transaction` sessions |
+| `INCLUDE_IDLE` | `true` | Also sample fully-idle sessions (feeds the "wait class mix (incl. idle)" pie) |
 
 Lower `SAMPLE_INTERVAL_SECS` for finer ASH resolution (more rows, more load); raise
 `SNAPSHOT_INTERVAL_SECS` to reduce overhead. Change in `app.yaml` and redeploy.
 
-> **Cost:** the collector keeps a connection open and polls continuously, so a monitored
-> endpoint **won't scale to zero** while the app runs. Expected for a monitoring app —
-> disable idle targets (§4.3) to let their endpoints sleep.
+> **Cost / scale-to-zero:** while collecting, the app polls continuously, so a monitored
+> endpoint **won't scale to zero**. Click **Stop auto collection** in the dashboard header to
+> pause sampling and drop target connections; with collection stopped and the dashboard idle
+> (Auto-refresh off), the repo pool also releases and the endpoint can sleep. You can also
+> disable individual idle targets (§4.3). **Snapshot now** forces an immediate snapshot.
 
 ---
 
@@ -377,6 +386,8 @@ PGPASSWORD=$TOKEN psql "host=$HOST port=5432 dbname=postgres user=$EMAIL sslmode
 | `SEED_TARGETS` | yes | JSON array of `{label, endpoint, dbname}` |
 | `SAMPLE_INTERVAL_SECS` / `SNAPSHOT_INTERVAL_SECS` / `RETENTION_DAYS` | no | Cadence + retention |
 | `INCLUDE_IDLE_IN_TXN` | no | Sample idle-in-transaction sessions |
+| `INCLUDE_IDLE` | no | Also sample fully-idle sessions (idle pie); default on |
+| `INSTANCE_CONNECT_DB` | no | DB the instance-wide `*` target connects through (default `postgres`) |
 
 Local runs (`run_local.sh`) use your own identity via the CLI profile instead of the SP, so
 you can develop without the SP grants — you just need `pg_monitor` yourself (the

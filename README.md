@@ -50,6 +50,14 @@ and a live Plotly dashboard. The quickest way to stand it up:
 See [app/DEPLOY.md](app/DEPLOY.md) for the full guide (and how to obtain each value by hand)
 and [app/README.md](app/README.md) for the app architecture.
 
+The dashboard shows Average Active Sessions by wait class (with the configured CU ceiling as
+a step line and a "CPU used (from ASH)" overlay), two wait-class donuts (active, and one that
+also counts idle time), Top SQL split into CPU vs wait time per statement (labelled with the
+source database), a load profile (tps, buffer cache hit %, and Neon LFC hit %), and a
+snapshot diff. Header controls let you take an on-demand snapshot, start/stop the background
+collection (so the endpoint can scale to zero), and pick a time window (presets or a custom
+last-N-minutes).
+
 ## Connect
 
 **Lakebase (default):** point it at a CLI profile + endpoint. It resolves the host, your

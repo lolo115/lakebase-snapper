@@ -31,6 +31,28 @@ FastAPI (app.py)
 Collection SQL is the same as the CLI: ASH from `pg_stat_activity` (state='active',
 `statement_timestamp()` groups a poll), snapshots from `pg_stat_statements` + system stats.
 
+## Dashboard
+
+The single page (auto-refreshing, with a target dropdown and a time-window selector that
+includes a custom "last N minutes") shows:
+
+- **Average Active Sessions by wait class**: stacked AAS over time, with the configured
+  **CU ceiling** drawn as a red step line (it steps when the endpoint's CU changes) and a
+  **"CPU used (from ASH)"** overlay (average sessions on CPU, a proxy for used vCPU, since
+  the platform's live vCPU metric is not exposed to the app).
+- **Wait class mix (active)** and **Wait class mix (incl. idle)**: two donuts; the second
+  also counts Idle / Idle-in-transaction time.
+- **Top SQL by CPU & wait time**: per statement, active time split into CPU + each wait
+  class (estimated as sample_count x sample-interval). Bars are prefixed with the source
+  **database** when several appear (e.g. the instance-wide target).
+- **Load profile**: transactions/s, **buffer cache hit %**, and **LFC hit %** (Neon Local
+  File Cache) on a second axis.
+- **Latest snapshot diff**: top SQL by execution-time delta between the two most recent
+  snapshots.
+
+Header controls: **Snapshot now** (force an immediate snapshot of every enabled target) and
+**Start / Stop auto collection** (see Notes for scale-to-zero).
+
 ## Files
 
 | File | Purpose |
@@ -57,9 +79,14 @@ Collection SQL is the same as the CLI: ASH from `pg_stat_activity` (state='activ
 | `SEED_TARGETS` | JSON array of monitored targets `[{label, endpoint, dbname}]` |
 | `SAMPLE_INTERVAL_SECS` / `SNAPSHOT_INTERVAL_SECS` / `RETENTION_DAYS` | Cadence + retention |
 | `INCLUDE_IDLE_IN_TXN` | Also sample `idle in transaction` sessions |
+| `INCLUDE_IDLE` | Also sample fully-idle sessions (feeds the "incl. idle" wait pie); default on |
+| `INSTANCE_CONNECT_DB` | DB the instance-wide `*` target connects through (default `postgres`) |
 
-Targets can also be managed at runtime: `GET/POST /api/targets`,
-`POST /api/targets/{id}/enabled`.
+Runtime API: `GET/POST /api/targets`, `POST /api/targets/{id}/enabled`,
+`POST /api/snapshot-now` (force a snapshot), `POST /api/collection` (`{"enabled": true|false}`
+to start/stop collection), plus the chart endpoints (`/api/summary`, `/api/ash-timeline`,
+`/api/waits` [`?include_idle=1`], `/api/top-sql`, `/api/load-profile`, `/api/cu-current`,
+`/api/cu-timeline`, `/api/snap-diff`, `/api/status`, `/api/diag`).
 
 ## One-time service-principal wiring
 
@@ -87,6 +114,13 @@ be granted access two ways:
    ALTER DEFAULT PRIVILEGES IN SCHEMA snap GRANT USAGE,SELECT,UPDATE ON SEQUENCES TO "<SERVICE-PRINCIPAL-CLIENT-ID>";
    ```
    To monitor a target on a **different** instance, repeat the role + `pg_monitor` grant there.
+
+> **LFC hit ratio (optional).** The load profile's *LFC hit %* reads Neon's `neon_lfc_stats`.
+> Enable it once per monitored database:
+> `CREATE EXTENSION IF NOT EXISTS neon; GRANT SELECT ON neon_lfc_stats TO "<SERVICE-PRINCIPAL-CLIENT-ID>";`
+> Without it the app still runs; only the LFC line stays empty for that database. (The
+> instance-wide `*` target reads through `INSTANCE_CONNECT_DB`, whose `neon` view may be
+> absent, so LFC can be blank there; it is endpoint-wide and visible on per-database targets.)
 
 ## Run locally
 
@@ -119,9 +153,13 @@ databricks apps deploy lakebase-snapper --source-code-path "/Workspace/Users/$EM
 
 ## Notes
 
-- **Keeps the endpoint awake:** the collector polls every few seconds, so the monitored
-  endpoint won't scale to zero while the app runs. Expected for a monitoring app.
-- **ASH needs activity:** an idle target yields no ASH rows (only *active* sessions are
-  recorded); snapshots still accrue from cumulative counters.
+- **Keeps the endpoint awake / scale to zero:** while collecting, the app polls every few
+  seconds, so the monitored endpoint won't scale to zero. Use **Stop auto collection** in the
+  header to pause sampling and drop the target connections; once collection is stopped and
+  the dashboard is idle (set Auto-refresh to off), the repo pool releases too and the
+  endpoint can scale to zero.
+- **ASH needs activity:** an idle target yields no *active* ASH rows; snapshots still accrue
+  from cumulative counters. Fully-idle sessions are captured separately (for the idle pie)
+  when `INCLUDE_IDLE` is on.
 - **SDK pin matters:** `w.postgres.generate_database_credential` requires
   `databricks-sdk>=0.132`; the App base image ships an older SDK, so the pin is required.
