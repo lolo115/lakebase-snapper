@@ -52,6 +52,7 @@
   th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
   th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
   td.num{text-align:right;font-variant-numeric:tabular-nums}
+  td.maint{color:var(--lwlock)}
   code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:#cdd7ee}
   .muted{color:var(--muted)}
   .bar{height:6px;background:var(--panel2);border-radius:4px;overflow:hidden}
@@ -155,6 +156,9 @@ const WAIT_COLORS = {
 };
 function getCss(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim();}
 function colorFor(w){return WAIT_COLORS[w]||getCss('--other');}
+// System/maintenance databases (postgres, template*): traffic here is internal maintenance,
+// not application workload, so it's flagged (amber + ⚙) in Top SQL and the snapshot diff.
+function isMaintDb(db){ db=(db||''); return db==='postgres' || db.startsWith('template'); }
 // #rrggbb -> rgba() with alpha (passes through rgb()/named colors unchanged)
 function rgba(c, a){
   c=(c||'').trim();
@@ -410,7 +414,9 @@ function renderTopSql(rows, intervalSecs){
   // Always show the source database on its own line above the (truncated) query text.
   const labels=items.map(it=>{ const q=(it.query||'').replace(/\s+/g,' ').trim();
     const base=(q.length>44?q.slice(0,44)+'…':q) || String(it.query_id);
-    return `<span style="color:#93a1bd">▸ ${it.datname}</span><br>${base}`; });
+    const maint=isMaintDb(it.datname);
+    const dbTxt=maint?`${it.datname} ⚙ maintenance`:it.datname;
+    return `<span style="color:${maint?'#d29922':'#93a1bd'}">▸ ${dbTxt}</span><br>${base}`; });
   // wait classes present; CPU first for a stable, readable stack order
   const klasses=[...new Set(rows.map(r=>r.wait_class))]
     .sort((a,b)=> a==='CPU'?-1 : b==='CPU'?1 : a.localeCompare(b));
@@ -428,7 +434,7 @@ function renderTopSql(rows, intervalSecs){
         x:[x0,x1,x1,x0,x0], y:[yi-H,yi-H,yi+H,yi+H,yi-H],
         fillgradient:{type:'horizontal', colorscale:[[0,rgba(col,0.30)],[1,rgba(col,0.95)]]},
         fillcolor:rgba(col,0.85), line:{width:0}, showlegend:false,
-        text:`db ${it.datname} · query_id ${it.query_id}<br>${k}: ${w.toFixed(1)}s active (est.)`, hoverinfo:'text'
+        text:`db ${it.datname}${isMaintDb(it.datname)?' (internal maintenance)':''} · query_id ${it.query_id}<br>${k}: ${w.toFixed(1)}s active (est.)`, hoverinfo:'text'
       });
       x0=x1;
     });
@@ -474,18 +480,23 @@ function renderSnapDiff(sd){
     $('#snapDiffMeta').textContent='Need at least two snapshots. The scheduler takes one every few minutes (or use "Snapshot now").';
     tb.innerHTML=''; return;
   }
-  $('#snapDiffMeta').innerHTML=`window ${fmtT(sd.from)} → ${fmtT(sd.to)} · `+
+  let meta=`window ${fmtT(sd.from)} → ${fmtT(sd.to)} · `+
      `total DB exec time ${sd.total_exec_ms.toLocaleString()} ms`;
-  tb.innerHTML = sd.items.map(i=>`<tr>
+  if(sd.items.some(i=>isMaintDb(i.datname)))
+    meta+=` · <span style="color:var(--lwlock)">⚙ amber = internal maintenance / system DB</span>`;
+  $('#snapDiffMeta').innerHTML=meta;
+  tb.innerHTML = sd.items.map(i=>{
+    const db=i.datname||'?'; const maint=isMaintDb(db);
+    return `<tr>
     <td class="num">${i.pct}%<div class="bar"><i style="width:${Math.min(i.pct,100)}%"></i></div></td>
     <td class="num">${i.exec_ms.toLocaleString()}</td>
     <td class="num">${i.calls.toLocaleString()}</td>
     <td class="num">${i.ms_per_call.toLocaleString()}</td>
     <td class="num">${i.rows.toLocaleString()}</td>
-    <td>${escapeHtml(i.datname||'?')}</td>
+    <td class="${maint?'maint':''}" title="${maint?'Internal maintenance / system database (not application workload)':''}">${escapeHtml(db)}${maint?' ⚙':''}</td>
     <td><code>${i.query_id}</code></td>
     <td><code>${escapeHtml(i.query)}</code></td>
-  </tr>`).join('');
+  </tr>`;}).join('');
 }
 
 function fmtT(iso){return new Date(iso).toLocaleTimeString();}
