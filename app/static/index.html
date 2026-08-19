@@ -139,6 +139,39 @@ function rgba(c, a){
 // Vertical fill gradient for an area band: faint at the baseline, richer toward the top,
 // giving depth without obscuring the shape. Used on the AAS and tps areas.
 function areaGradient(c){ return {type:'vertical', colorscale:[[0,rgba(c,0.08)],[1,rgba(c,0.72)]]}; }
+// Mix a color toward white by `amt` (0..1). Accepts #rrggbb or rgb()/rgba().
+function lightenColor(c, amt){
+  let r,g,b; const m=(c||'').match(/rgba?\(([^)]+)\)/);
+  if(m){ const a=m[1].split(',').map(Number); r=a[0]; g=a[1]; b=a[2]; }
+  else if(c && c[0]==='#'){ const n=parseInt(c.slice(1),16); r=(n>>16)&255; g=(n>>8)&255; b=n&255; }
+  else return c;
+  return `rgb(${Math.round(r+(255-r)*amt)},${Math.round(g+(255-g)*amt)},${Math.round(b+(255-b)*amt)})`;
+}
+// Plotly pie slices are flat SVG paths with no gradient option, so give each slice a radial
+// gradient (lighter core -> full color at the rim) by injecting <radialGradient> defs and
+// pointing each slice's fill at the one matching its color. Re-run after every pie render.
+function applyPieGradients(divId){
+  const gd=document.getElementById(divId); if(!gd) return;
+  const paths=gd.querySelectorAll('.slice path.surface'); if(!paths.length) return;
+  const svg=paths[0].ownerSVGElement; if(!svg) return;
+  const NS='http://www.w3.org/2000/svg';
+  let defs=svg.querySelector('defs.pie-grad'); if(defs) defs.remove();
+  defs=document.createElementNS(NS,'defs'); defs.setAttribute('class','pie-grad');
+  svg.insertBefore(defs, svg.firstChild);
+  const made={};
+  paths.forEach(p=>{
+    const base=p.style.fill||p.getAttribute('fill'); if(!base) return;
+    const id='pg-'+base.replace(/[^a-z0-9]/gi,'');
+    if(!made[id]){ made[id]=1;
+      const g=document.createElementNS(NS,'radialGradient');
+      g.setAttribute('id',id); g.setAttribute('cx','35%'); g.setAttribute('cy','35%'); g.setAttribute('r','80%');
+      const s0=document.createElementNS(NS,'stop'); s0.setAttribute('offset','0%'); s0.setAttribute('stop-color',lightenColor(base,0.45));
+      const s1=document.createElementNS(NS,'stop'); s1.setAttribute('offset','100%'); s1.setAttribute('stop-color',base);
+      g.appendChild(s0); g.appendChild(s1); defs.appendChild(g);
+    }
+    p.style.fill='url(#'+id+')';
+  });
+}
 const LAYOUT = {paper_bgcolor:'rgba(0,0,0,0)',plot_bgcolor:'rgba(0,0,0,0)',
   font:{color:getCss('--fg'),size:12},margin:{l:48,r:16,t:10,b:36},
   legend:{orientation:'h',y:-0.2,font:{size:11}},
@@ -300,7 +333,8 @@ function renderWaitMix(rows){
     type:'pie', hole:0.62, labels, values:labels.map(l=>byClass[l]),
     marker:{colors:labels.map(colorFor), line:{color:getCss('--panel'),width:2}},
     textinfo:'label+percent', textfont:{size:11}, sort:true
-  }], {...LAYOUT, margin:{l:8,r:8,t:8,b:8}, showlegend:false}, CONFIG);
+  }], {...LAYOUT, margin:{l:8,r:8,t:8,b:8}, showlegend:false}, CONFIG)
+   .then(()=>applyPieGradients('waitMix'));
 }
 
 function renderTopSql(rows, intervalSecs){
