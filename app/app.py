@@ -175,6 +175,12 @@ def api_cu_timeline(target_id: int, mins: int = 60):
     return repo.cu_timeline(target_id, mins)
 
 
+@app.get("/api/cu-current")
+def api_cu_current(target_id: int):
+    _require_target(target_id)
+    return repo.current_max_cu(target_id)
+
+
 @app.get("/api/waits")
 def api_waits(target_id: int, mins: int = 60):
     _require_target(target_id)

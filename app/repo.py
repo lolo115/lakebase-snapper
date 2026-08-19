@@ -252,6 +252,23 @@ def cu_timeline(target_id, since_min):
                 for r in conn.execute(sql, (target_id, since_min)).fetchall()]
 
 
+def current_max_cu(target_id):
+    """Most recent configured max CU for the target's ENDPOINT (shared by all its targets),
+    so the dashboard can always draw a CU reference line even for a freshly added target
+    that has no snapshots of its own yet."""
+    sql = """
+    SELECT (s.sys->'cu'->>'max')::float
+    FROM snapshots s
+    WHERE s.target_id IN (SELECT id FROM targets
+                          WHERE endpoint = (SELECT endpoint FROM targets WHERE id=%s))
+      AND s.sys ? 'cu'
+    ORDER BY s.snap_time DESC LIMIT 1
+    """
+    with repo_pool.connection() as conn:
+        r = conn.execute(sql, (target_id,)).fetchone()
+    return {"max_cu": float(r[0]) if r and r[0] is not None else None}
+
+
 def latest_snap_diff(target_id, limit=12):
     """Top SQL by execution-time delta between the two most recent snapshots."""
     with repo_pool.connection() as conn:

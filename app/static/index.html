@@ -191,7 +191,7 @@ async function refresh(){
     const [sum, tl, cu, wm, ts, lp, sd, st] = await Promise.all([
       api(`/api/summary?target_id=${tid()}&mins=${m}`),
       api(`/api/ash-timeline?target_id=${tid()}&mins=${m}&bucket=${bucketFor(m)}`),
-      api(`/api/cu-timeline?target_id=${tid()}&mins=${m}`),
+      api(`/api/cu-current?target_id=${tid()}`),
       api(`/api/waits?target_id=${tid()}&mins=${m}`),
       api(`/api/top-sql?target_id=${tid()}&mins=${m}&limit=10`),
       api(`/api/load-profile?target_id=${tid()}&mins=${Math.max(m,240)}`),
@@ -199,7 +199,7 @@ async function refresh(){
       api(`/api/status`)
     ]);
     renderTiles(sum, st);
-    renderTimeline(tl, cu);
+    renderTimeline(tl, cu, m);
     renderWaitMix(wm);
     renderTopSql(ts);
     renderLoadProfile(lp);
@@ -222,28 +222,35 @@ function renderTiles(s, st){
     `<div class="tile"><div class="v">${v}</div><div class="k">${k}</div></div>`).join('');
 }
 
-function renderTimeline(rows, cu){
+function renderTimeline(rows, cu, mins){
+  // Build a contiguous, epoch-aligned bucket grid across the whole window so the chart is
+  // continuous (idle buckets show 0) and the time axis is stable on every refresh.
+  const bms = bucketFor(mins)*1000;
+  const nowMs = Date.now();
+  const startMs = nowMs - mins*60000;
+  const grid=[]; for(let b=Math.floor(startMs/bms)*bms; b<=nowMs; b+=bms) grid.push(b);
+  const gx = grid.map(b=>new Date(b));
   const classes=[...new Set(rows.map(r=>r.wait_class))];
-  const buckets=[...new Set(rows.map(r=>r.bucket))];
-  const idx={}; rows.forEach(r=>{idx[r.wait_class+'|'+r.bucket]=r.aas;});
+  const idx={}; rows.forEach(r=>{ const e=new Date(r.bucket).getTime();
+    (idx[r.wait_class]=idx[r.wait_class]||{})[e]=r.aas; });
   const traces=classes.map(c=>({
-    x:buckets, y:buckets.map(b=>idx[c+'|'+b]||0),
+    x:gx, y:grid.map(b=>(idx[c]&&idx[c][b])||0),
     name:c, type:'scatter', mode:'lines', stackgroup:'one',
     line:{width:0.5,color:colorFor(c)}, fillcolor:colorFor(c)
   }));
-  // Provisioned CU ceiling (max configured, captured per snapshot) on the same AAS scale,
-  // so you can see when active sessions approach the compute you've allocated.
-  if(cu && cu.length){
+  // Provisioned CU ceiling as a continuous horizontal reference across the whole window
+  // (endpoint-level value, so it's identical and always present for every target).
+  if(cu && cu.max_cu!=null){
     traces.push({
-      x:cu.map(r=>r.t), y:cu.map(r=>r.max_cu),
-      name:'CU (max configured)', type:'scatter', mode:'lines+markers',
-      line:{color:'#ff3b30', width:2, shape:'hv', dash:'dot'},
-      marker:{size:4, color:'#ff3b30'},
+      x:[new Date(startMs), new Date(nowMs)], y:[cu.max_cu, cu.max_cu],
+      name:'CU (max configured)', type:'scatter', mode:'lines',
+      line:{color:'#ff3b30', width:2, dash:'dot'},
       hovertemplate:'CU max: %{y}<extra></extra>'
     });
   }
   Plotly.react('ashTimeline', traces.length?traces:[{x:[],y:[]}],
-    {...LAYOUT, yaxis:{...LAYOUT.yaxis,title:'AAS · CU',rangemode:'tozero'}}, CONFIG);
+    {...LAYOUT, yaxis:{...LAYOUT.yaxis,title:'AAS · CU',rangemode:'tozero'},
+     xaxis:{...LAYOUT.xaxis, range:[new Date(startMs), new Date(nowMs)]}}, CONFIG);
 }
 
 function renderWaitMix(rows){
