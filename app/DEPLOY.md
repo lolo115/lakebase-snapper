@@ -255,6 +255,13 @@ Targets are a JSON array in `SEED_TARGETS`. Each entry:
 > Optional: everything else works without it; only the LFC line stays empty for that database.
 > Top SQL also shows the source **database** per statement (useful on the instance-wide target).
 
+> **Own queries + system databases.** Top SQL and the snapshot diff exclude lakebase-snapper's
+> own collector/repo queries (the `pg_stat_statements` analogue of the ASH `application_name`
+> exclusion). Statements from system/maintenance databases (`postgres`, `template*`), e.g.
+> Lakebase platform monitoring, are still shown but flagged in **amber** with a gear marker as
+> internal maintenance, not application workload. The instance-wide `*` target connects through
+> `INSTANCE_CONNECT_DB` (default `postgres`), which is why some maintenance traffic appears there.
+
 > **Instance-wide (all databases) target.** Use the sentinel `"dbname": "*"` to get an
 > aggregate target that is *not* scoped to one database — ASH, load profile/tps, and top
 > SQL then sum across every database on the endpoint. The collector connects through the

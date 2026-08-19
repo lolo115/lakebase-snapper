@@ -43,12 +43,16 @@ includes a custom "last N minutes") shows:
 - **Wait class mix (active)** and **Wait class mix (incl. idle)**: two donuts; the second
   also counts Idle / Idle-in-transaction time.
 - **Top SQL by CPU & wait time**: per statement, active time split into CPU + each wait
-  class (estimated as sample_count x sample-interval). Bars are prefixed with the source
-  **database** when several appear (e.g. the instance-wide target).
+  class (estimated as sample_count x sample-interval). Each bar shows the source
+  **database**; system/maintenance databases (`postgres`, `template*`) are flagged in amber
+  with a gear marker. The app's own collector/repo queries are excluded (the
+  `pg_stat_statements` analogue of the ASH `application_name` exclusion), so it reflects
+  real workload.
 - **Load profile**: transactions/s, **buffer cache hit %**, and **LFC hit %** (Neon Local
   File Cache) on a second axis.
-- **Latest snapshot diff**: top SQL by execution-time delta between the two most recent
-  snapshots.
+- **Latest snapshot diff**: top SQL by execution-time delta between the first and last
+  snapshot in the **selected time window**, with a **db** column (maintenance DBs flagged
+  the same way). Own queries are excluded here too.
 
 Header controls: **Snapshot now** (force an immediate snapshot of every enabled target) and
 **Start / Stop auto collection** (see Notes for scale-to-zero).
@@ -161,5 +165,10 @@ databricks apps deploy lakebase-snapper --source-code-path "/Workspace/Users/$EM
 - **ASH needs activity:** an idle target yields no *active* ASH rows; snapshots still accrue
   from cumulative counters. Fully-idle sessions are captured separately (for the idle pie)
   when `INCLUDE_IDLE` is on.
+- **Real workload only:** Top SQL and the snapshot diff exclude the app's own collector/repo
+  queries. Statements in system/maintenance databases (`postgres`, `template*`), e.g. Lakebase
+  platform monitoring, are still shown but flagged in amber (gear icon) since they are not
+  your application workload. The instance-wide `*` target connects through `INSTANCE_CONNECT_DB`
+  (default `postgres`), which is why some maintenance traffic surfaces there.
 - **SDK pin matters:** `w.postgres.generate_database_credential` requires
   `databricks-sdk>=0.132`; the App base image ships an older SDK, so the pin is required.
