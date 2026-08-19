@@ -42,22 +42,45 @@ def _sample_tick():
             log.warning("ASH sample failed for %s: %s", t["label"], e)
 
 
+def _snapshot_target(t, label="auto"):
+    """Capture one snapshot for a single target. Returns (snap_id, n_statements)."""
+    tc, scoped = _target_conn_scope(t)
+    sys_obj = dict(collect_sys(tc, scoped) or {})
+    # Capture the configured autoscaling CU bounds at snapshot time so the
+    # dashboard can plot the provisioned CU ceiling over the window.
+    cu = endpoint_cu(t["endpoint"])
+    if cu:
+        sys_obj["cu"] = cu
+    pgss_rows, _ = collect_pgss(tc, scoped)
+    snap_time = datetime.now(timezone.utc)
+    snap_id = repo.insert_snapshot(t["id"], snap_time, label, sys_obj, pgss_rows)
+    return snap_id, len(pgss_rows)
+
+
 def _snapshot_tick():
     for t in repo.list_targets(only_enabled=True):
         try:
-            tc, scoped = _target_conn_scope(t)
-            sys_obj = dict(collect_sys(tc, scoped) or {})
-            # Capture the configured autoscaling CU bounds at snapshot time so the
-            # dashboard can plot the provisioned CU ceiling over the window.
-            cu = endpoint_cu(t["endpoint"])
-            if cu:
-                sys_obj["cu"] = cu
-            pgss_rows, _ = collect_pgss(tc, scoped)
-            snap_time = datetime.now(timezone.utc)
-            snap_id = repo.insert_snapshot(t["id"], snap_time, "auto", sys_obj, pgss_rows)
-            log.info("snapshot %s for %s (%d statements)", snap_id, t["label"], len(pgss_rows))
+            snap_id, n = _snapshot_target(t, "auto")
+            log.info("snapshot %s for %s (%d statements)", snap_id, t["label"], n)
         except Exception as e:
             log.warning("snapshot failed for %s: %s", t["label"], e)
+
+
+def snapshot_now():
+    """Take a snapshot for every enabled target right now (on-demand, from the UI).
+    Returns a per-target result list so the caller can report success/failure."""
+    results = []
+    for t in repo.list_targets(only_enabled=True):
+        try:
+            snap_id, n = _snapshot_target(t, "manual")
+            log.info("manual snapshot %s for %s (%d statements)", snap_id, t["label"], n)
+            results.append({"target_id": t["id"], "label": t["label"],
+                            "snap_id": snap_id, "statements": n, "ok": True})
+        except Exception as e:
+            log.warning("manual snapshot failed for %s: %s", t["label"], e)
+            results.append({"target_id": t["id"], "label": t["label"],
+                            "ok": False, "error": f"{type(e).__name__}: {e}"})
+    return results
 
 
 def _purge_tick():

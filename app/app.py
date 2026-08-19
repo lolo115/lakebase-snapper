@@ -114,6 +114,13 @@ def api_status():
     return scheduler.status()
 
 
+@app.post("/api/snapshot-now")
+def api_snapshot_now():
+    """Force an immediate snapshot of every enabled target (triggered from the UI button)."""
+    results = scheduler.snapshot_now()
+    return {"ok": all(r["ok"] for r in results), "results": results}
+
+
 @app.get("/api/diag")
 def api_diag():
     """Live connectivity self-test — safe to expose (no secrets), invaluable for debugging."""

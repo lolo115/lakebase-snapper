@@ -31,6 +31,9 @@
         border-radius:7px;padding:7px 10px;font-size:13px}
   button{cursor:pointer}
   button:hover{border-color:var(--accent)}
+  button.danger{background:#e0342b;border-color:#e0342b;color:#fff;font-weight:600}
+  button.danger:hover{background:#ff3b30;border-color:#ff3b30}
+  button.danger:disabled{opacity:.6;cursor:default}
   .dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px}
   main{padding:18px 20px;display:grid;gap:16px;grid-template-columns:repeat(12,1fr)}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
@@ -79,6 +82,7 @@
       <option value="60000">60s</option>
     </select>
     <button id="reload">Refresh</button>
+    <button id="snapNow" class="danger" title="Take a snapshot of every enabled target now, then refresh">Snapshot now</button>
     <span id="status" class="muted"></span>
   </div>
 </header>
@@ -352,6 +356,23 @@ function setupAutoRefresh(){
 ['target','mins'].forEach(id=>$('#'+id).addEventListener('change',refresh));
 $('#refresh').addEventListener('change',setupAutoRefresh);
 $('#reload').addEventListener('click',refresh);
+
+// Force an immediate snapshot of every enabled target, then refresh the charts.
+$('#snapNow').addEventListener('click', async ()=>{
+  const b=$('#snapNow'); const label=b.textContent;
+  b.disabled=true; b.textContent='Snapshotting…'; $('#err').textContent='';
+  try{
+    const r=await fetch('/api/snapshot-now',{method:'POST'});
+    if(!r.ok) throw new Error('snapshot-now -> '+r.status);
+    const out=await r.json();
+    if(!out.ok){
+      const bad=(out.results||[]).filter(x=>!x.ok).map(x=>`${x.label}: ${x.error}`).join('; ');
+      $('#err').textContent='Snapshot issues: '+(bad||'see logs');
+    }
+    await refresh();
+  }catch(e){ $('#err').textContent=String(e); }
+  finally{ b.disabled=false; b.textContent=label; }
+});
 
 (async function init(){
   await loadTargets();
