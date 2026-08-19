@@ -47,6 +47,21 @@ def mint_token(endpoint: str) -> str:
     return _w.postgres.generate_database_credential(endpoint=endpoint).token
 
 
+def endpoint_cu(endpoint: str):
+    """Configured autoscaling CU bounds for an endpoint, read at call time so config
+    changes (up/downscale) are captured. Returns {min, max, state} or None on failure.
+
+    Note: the platform exposes the *configured* autoscaling bounds, not the sub-minute
+    live-allocated CU, so this reflects the provisioned CU range."""
+    try:
+        st = _w.postgres.get_endpoint(name=endpoint).status
+        return {"min": float(st.autoscaling_limit_min_cu),
+                "max": float(st.autoscaling_limit_max_cu),
+                "state": str(getattr(st, "current_state", "") or "")}
+    except Exception:
+        return None
+
+
 # --------------------------------------------------------------------------------------
 # Repository connection pool (the lakebase_snapper database)
 # --------------------------------------------------------------------------------------

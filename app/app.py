@@ -169,6 +169,12 @@ def api_ash_timeline(target_id: int, mins: int = 60, bucket: int = 10):
     return repo.ash_timeline(target_id, mins, bucket)
 
 
+@app.get("/api/cu-timeline")
+def api_cu_timeline(target_id: int, mins: int = 60):
+    _require_target(target_id)
+    return repo.cu_timeline(target_id, mins)
+
+
 @app.get("/api/waits")
 def api_waits(target_id: int, mins: int = 60):
     _require_target(target_id)

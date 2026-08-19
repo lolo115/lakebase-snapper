@@ -235,6 +235,23 @@ def load_profile(target_id, since_min):
                 for r in conn.execute(sql, (target_id, since_min)).fetchall()]
 
 
+def cu_timeline(target_id, since_min):
+    """Configured autoscaling CU (upper bound) captured at each snapshot, for overlaying
+    on the AAS chart. Returns [{t, max_cu, min_cu}] ordered by time."""
+    sql = """
+    SELECT to_char(snap_time AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') t,
+           (sys->'cu'->>'max')::float max_cu,
+           (sys->'cu'->>'min')::float min_cu
+    FROM snapshots
+    WHERE target_id=%s AND snap_time >= now() - make_interval(mins => %s)
+      AND sys ? 'cu'
+    ORDER BY snap_time
+    """
+    with repo_pool.connection() as conn:
+        return [dict(zip(("t", "max_cu", "min_cu"), r))
+                for r in conn.execute(sql, (target_id, since_min)).fetchall()]
+
+
 def latest_snap_diff(target_id, limit=12):
     """Top SQL by execution-time delta between the two most recent snapshots."""
     with repo_pool.connection() as conn:

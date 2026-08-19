@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from apscheduler.schedulers.background import BackgroundScheduler
 
 import repo
-from core import target_conn, collect_ash, collect_sys, collect_pgss
+from core import target_conn, collect_ash, collect_sys, collect_pgss, endpoint_cu
 
 log = logging.getLogger("lakebase_snapper.scheduler")
 
@@ -35,7 +35,12 @@ def _snapshot_tick():
     for t in repo.list_targets(only_enabled=True):
         try:
             tc = target_conn(t["endpoint"], t["dbname"])
-            sys_obj = collect_sys(tc)
+            sys_obj = dict(collect_sys(tc) or {})
+            # Capture the configured autoscaling CU bounds at snapshot time so the
+            # dashboard can plot the provisioned CU ceiling over the window.
+            cu = endpoint_cu(t["endpoint"])
+            if cu:
+                sys_obj["cu"] = cu
             pgss_rows, _ = collect_pgss(tc)
             snap_time = datetime.now(timezone.utc)
             snap_id = repo.insert_snapshot(t["id"], snap_time, "auto", sys_obj, pgss_rows)

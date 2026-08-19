@@ -185,9 +185,10 @@ async function refresh(){
   $('#status').textContent='loading…';
   try{
     const m = mins();
-    const [sum, tl, wm, ts, lp, sd, st] = await Promise.all([
+    const [sum, tl, cu, wm, ts, lp, sd, st] = await Promise.all([
       api(`/api/summary?target_id=${tid()}&mins=${m}`),
       api(`/api/ash-timeline?target_id=${tid()}&mins=${m}&bucket=${bucketFor(m)}`),
+      api(`/api/cu-timeline?target_id=${tid()}&mins=${m}`),
       api(`/api/waits?target_id=${tid()}&mins=${m}`),
       api(`/api/top-sql?target_id=${tid()}&mins=${m}&limit=10`),
       api(`/api/load-profile?target_id=${tid()}&mins=${Math.max(m,240)}`),
@@ -195,7 +196,7 @@ async function refresh(){
       api(`/api/status`)
     ]);
     renderTiles(sum, st);
-    renderTimeline(tl);
+    renderTimeline(tl, cu);
     renderWaitMix(wm);
     renderTopSql(ts);
     renderLoadProfile(lp);
@@ -218,7 +219,7 @@ function renderTiles(s, st){
     `<div class="tile"><div class="v">${v}</div><div class="k">${k}</div></div>`).join('');
 }
 
-function renderTimeline(rows){
+function renderTimeline(rows, cu){
   const classes=[...new Set(rows.map(r=>r.wait_class))];
   const buckets=[...new Set(rows.map(r=>r.bucket))];
   const idx={}; rows.forEach(r=>{idx[r.wait_class+'|'+r.bucket]=r.aas;});
@@ -227,8 +228,19 @@ function renderTimeline(rows){
     name:c, type:'scatter', mode:'lines', stackgroup:'one',
     line:{width:0.5,color:colorFor(c)}, fillcolor:colorFor(c)
   }));
+  // Provisioned CU ceiling (max configured, captured per snapshot) on the same AAS scale,
+  // so you can see when active sessions approach the compute you've allocated.
+  if(cu && cu.length){
+    traces.push({
+      x:cu.map(r=>r.t), y:cu.map(r=>r.max_cu),
+      name:'CU (max configured)', type:'scatter', mode:'lines+markers',
+      line:{color:'#e8edf6', width:2, shape:'hv', dash:'dot'},
+      marker:{size:4, color:'#e8edf6'},
+      hovertemplate:'CU max: %{y}<extra></extra>'
+    });
+  }
   Plotly.react('ashTimeline', traces.length?traces:[{x:[],y:[]}],
-    {...LAYOUT, yaxis:{...LAYOUT.yaxis,title:'AAS',rangemode:'tozero'}}, CONFIG);
+    {...LAYOUT, yaxis:{...LAYOUT.yaxis,title:'AAS · CU',rangemode:'tozero'}}, CONFIG);
 }
 
 function renderWaitMix(rows){
