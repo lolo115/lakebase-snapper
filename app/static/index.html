@@ -143,10 +143,10 @@ function parseEp(ep){
   const s=(ep||'').split('/');
   return {project:s[1]||'', branch:s[3]||'', endpoint:s[5]||''};
 }
-// Real Lakebase identity, e.g. "lakebase-laurent-prj / postgres"
-function targetName(t){ const e=parseEp(t.endpoint); return `${e.project} / ${t.dbname}`; }
-// Secondary detail, e.g. "production/primary"
-function targetLoc(t){ const e=parseEp(t.endpoint); return [e.branch,e.endpoint].filter(Boolean).join('/'); }
+// Real Lakebase identity: "<project> / <branch> - <database>"
+function targetName(t){ const e=parseEp(t.endpoint); return `${e.project} / ${e.branch} - ${t.dbname}`; }
+// Secondary detail: the endpoint name (disambiguates primary vs. read replicas)
+function targetLoc(t){ return parseEp(t.endpoint).endpoint; }
 
 function updateTargetBanner(){
   const t = activeTarget();
@@ -154,8 +154,9 @@ function updateTargetBanner(){
   if(!t){ el.innerHTML=''; return; }
   el.innerHTML = `<span class="dot"></span><b>${escapeHtml(targetName(t))}</b>`+
     `<span class="sub">${escapeHtml(targetLoc(t))}</span>`;
-  el.title = `project: ${parseEp(t.endpoint).project}\ndatabase: ${t.dbname}\n`+
-             `branch/endpoint: ${targetLoc(t)}\nlabel: ${t.label}`;
+  const e=parseEp(t.endpoint);
+  el.title = `project: ${e.project}\nbranch: ${e.branch}\nendpoint: ${e.endpoint}\n`+
+             `database: ${t.dbname}\nlabel: ${t.label}`;
 }
 
 async function api(path){
@@ -169,7 +170,7 @@ async function loadTargets(){
   TARGETS = ts;
   const sel = $('#target'); const cur = sel.value;
   sel.innerHTML = ts.map(t=>`<option value="${t.id}" ${t.enabled?'':'data-off'}>`+
-     `${targetName(t)} — ${targetLoc(t)}${t.enabled?'':' (disabled)'}</option>`).join('');
+     `${targetName(t)}${t.enabled?'':' (disabled)'}</option>`).join('');
   if(cur) sel.value = cur;
   updateTargetBanner();
   return ts;
