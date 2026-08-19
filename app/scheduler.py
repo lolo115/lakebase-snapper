@@ -17,15 +17,26 @@ SAMPLE_INTERVAL = float(os.environ.get("SAMPLE_INTERVAL_SECS", "2"))
 SNAPSHOT_INTERVAL = float(os.environ.get("SNAPSHOT_INTERVAL_SECS", "300"))
 RETENTION_DAYS = int(os.environ.get("RETENTION_DAYS", "7"))
 INCLUDE_IDLE_IN_TXN = os.environ.get("INCLUDE_IDLE_IN_TXN", "false").lower() == "true"
+# A target with dbname '*' is instance-wide (all databases). We must still connect to a
+# real database to read the shared stats views; use this one (needs pg_stat_statements).
+INSTANCE_SENTINEL = "*"
+INSTANCE_CONNECT_DB = os.environ.get("INSTANCE_CONNECT_DB", "postgres")
 
 _scheduler: BackgroundScheduler | None = None
+
+
+def _target_conn_scope(t):
+    """Return (TargetConn, scoped) for a target, handling the instance-wide '*' sentinel."""
+    scoped = t["dbname"] != INSTANCE_SENTINEL
+    connect_db = t["dbname"] if scoped else INSTANCE_CONNECT_DB
+    return target_conn(t["endpoint"], connect_db), scoped
 
 
 def _sample_tick():
     for t in repo.list_targets(only_enabled=True):
         try:
-            tc = target_conn(t["endpoint"], t["dbname"])
-            rows = collect_ash(tc, INCLUDE_IDLE_IN_TXN)
+            tc, scoped = _target_conn_scope(t)
+            rows = collect_ash(tc, INCLUDE_IDLE_IN_TXN, scoped)
             repo.insert_ash(t["id"], rows)
         except Exception as e:
             log.warning("ASH sample failed for %s: %s", t["label"], e)
@@ -34,14 +45,14 @@ def _sample_tick():
 def _snapshot_tick():
     for t in repo.list_targets(only_enabled=True):
         try:
-            tc = target_conn(t["endpoint"], t["dbname"])
-            sys_obj = dict(collect_sys(tc) or {})
+            tc, scoped = _target_conn_scope(t)
+            sys_obj = dict(collect_sys(tc, scoped) or {})
             # Capture the configured autoscaling CU bounds at snapshot time so the
             # dashboard can plot the provisioned CU ceiling over the window.
             cu = endpoint_cu(t["endpoint"])
             if cu:
                 sys_obj["cu"] = cu
-            pgss_rows, _ = collect_pgss(tc)
+            pgss_rows, _ = collect_pgss(tc, scoped)
             snap_time = datetime.now(timezone.utc)
             snap_id = repo.insert_snapshot(t["id"], snap_time, "auto", sys_obj, pgss_rows)
             log.info("snapshot %s for %s (%d statements)", snap_id, t["label"], len(pgss_rows))

@@ -249,6 +249,13 @@ Targets are a JSON array in `SEED_TARGETS`. Each entry:
 > `CREATE EXTENSION IF NOT EXISTS pg_stat_statements;`. Without it the app still snapshots
 > (CU + load profile keep working); only the top-SQL panel stays empty for that database.
 
+> **Instance-wide (all databases) target.** Use the sentinel `"dbname": "*"` to get an
+> aggregate target that is *not* scoped to one database — ASH, load profile/tps, and top
+> SQL then sum across every database on the endpoint. The collector connects through the
+> `INSTANCE_CONNECT_DB` database (default `postgres`, which must have `pg_stat_statements`)
+> to read the shared stats. Handy as an always-populated overview alongside per-database
+> targets. Example: `{"label":"all databases","endpoint":"<LAKEBASE_ENDPOINT>","dbname":"*"}`.
+
 ### 4.1 A database on the SAME instance as the repository
 
 Nothing extra to grant (the SP already has `pg_monitor` on this instance from §3.4). Just

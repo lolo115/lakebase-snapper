@@ -143,8 +143,10 @@ function parseEp(ep){
   const s=(ep||'').split('/');
   return {project:s[1]||'', branch:s[3]||'', endpoint:s[5]||''};
 }
-// Real Lakebase identity: "<project> / <branch> - <database>"
-function targetName(t){ const e=parseEp(t.endpoint); return `${e.project} / ${e.branch} - ${t.dbname}`; }
+// Real Lakebase identity: "<project> / <branch> - <database>" ('*' = instance-wide)
+function targetName(t){ const e=parseEp(t.endpoint);
+  const db = t.dbname==='*' ? 'All databases' : t.dbname;
+  return `${e.project} / ${e.branch} - ${db}`; }
 // Secondary detail: the endpoint name (disambiguates primary vs. read replicas)
 function targetLoc(t){ return parseEp(t.endpoint).endpoint; }
 

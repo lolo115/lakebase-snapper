@@ -179,7 +179,9 @@ def target_conn(endpoint: str, dbname: str) -> TargetConn:
 # Collection SQL (ported from the lakebase_snapper CLI)
 # --------------------------------------------------------------------------------------
 
-ASH_SQL = """
+# {DATNAME} / {DBFILTER} are substituted per target: scoped to one database, or left
+# instance-wide (all databases) for a target whose dbname is the '*' sentinel.
+ASH_SQL_TMPL = """
 SELECT statement_timestamp(),
        pid, usename, application_name, host(client_addr), backend_type, state,
        CASE WHEN wait_event IS NULL THEN 'CPU' ELSE wait_event_type END AS wait_class,
@@ -188,12 +190,12 @@ SELECT statement_timestamp(),
        EXTRACT(EPOCH FROM (clock_timestamp() - query_start))
 FROM pg_stat_activity
 WHERE pid <> pg_backend_pid()
-  AND coalesce(application_name,'') NOT LIKE 'lakebase_snapper_app/%%'  -- doubled to a literal percent (parameterized query); ignore our own connections
-  AND datname = current_database()        -- scope ASH to THIS target's database
+  AND coalesce(application_name,'') NOT LIKE 'lakebase_snapper_app/%%'  -- doubled percent (parameterized); ignore our own connections
+  {DATNAME}
   AND ( state = 'active' OR (%(idle_in_txn)s AND state = 'idle in transaction') )
 """
 
-SYS_SQL = """
+SYS_SQL_TMPL = """
 SELECT json_build_object(
   'server_now', now(),
   'db', (SELECT json_build_object(
@@ -209,7 +211,7 @@ SELECT json_build_object(
             'temp_files', COALESCE(sum(temp_files),0),
             'temp_bytes', COALESCE(sum(temp_bytes),0),
             'deadlocks', COALESCE(sum(deadlocks),0))
-         FROM pg_stat_database WHERE datname = current_database())
+         FROM pg_stat_database WHERE {DBFILTER})
 )
 """
 
@@ -222,8 +224,10 @@ _PGSS_CANDIDATE_COLS = [
 ]
 
 
-def collect_ash(tc: TargetConn, include_idle_in_txn: bool):
-    rows = tc.execute(ASH_SQL, {"idle_in_txn": include_idle_in_txn})
+def collect_ash(tc: TargetConn, include_idle_in_txn: bool, scoped: bool = True):
+    datname = "AND datname = current_database()" if scoped else ""
+    rows = tc.execute(ASH_SQL_TMPL.replace("{DATNAME}", datname),
+                      {"idle_in_txn": include_idle_in_txn})
     out = []
     for r in rows:
         r = [float(v) if isinstance(v, Decimal) else v for v in r]
@@ -231,11 +235,12 @@ def collect_ash(tc: TargetConn, include_idle_in_txn: bool):
     return out
 
 
-def collect_sys(tc: TargetConn):
-    return tc.execute(SYS_SQL)[0][0]
+def collect_sys(tc: TargetConn, scoped: bool = True):
+    dbf = "datname = current_database()" if scoped else "datname IS NOT NULL"
+    return tc.execute(SYS_SQL_TMPL.replace("{DBFILTER}", dbf))[0][0]
 
 
-def collect_pgss(tc: TargetConn):
+def collect_pgss(tc: TargetConn, scoped: bool = True):
     present = {r[0] for r in tc.execute(
         "SELECT column_name FROM information_schema.columns WHERE table_name='pg_stat_statements'")}
     if not present:
@@ -244,10 +249,12 @@ def collect_pgss(tc: TargetConn):
         return [], []
     cols = [c for c in _PGSS_CANDIDATE_COLS if c in present]
     toplevel = "toplevel" if "toplevel" in present else "true AS toplevel"
+    dbid_filter = ("AND dbid = (SELECT oid FROM pg_database WHERE datname = current_database())"
+                   if scoped else "")
     sql = (f"SELECT queryid::text, userid, dbid, {toplevel}, left(query,4000), "
            f"{', '.join(cols)} FROM pg_stat_statements "
            "WHERE queryid IS NOT NULL "
-           "AND dbid = (SELECT oid FROM pg_database WHERE datname = current_database())")
+           f"{dbid_filter}")
     out = []
     for r in tc.execute(sql):
         metrics = {c: (float(r[5 + i]) if isinstance(r[5 + i], Decimal) else r[5 + i])
