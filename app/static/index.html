@@ -276,12 +276,11 @@ function renderTimeline(rows, cuSeries, cuNow, mins){
   const classes=[...new Set(rows.map(r=>r.wait_class))];
   const idx={}; rows.forEach(r=>{ const e=new Date(r.bucket).getTime();
     (idx[r.wait_class]=idx[r.wait_class]||{})[e]=r.aas; });
-  const traces=classes.map(c=>{ const col=colorFor(c); return {
+  const traces=classes.map(c=>({
     x:gx, y:grid.map(b=>(idx[c]&&idx[c][b])||0),
     name:c, type:'scatter', mode:'lines', stackgroup:'one',
-    line:{width:1.2,color:col},
-    fillgradient:areaGradient(col), fillcolor:rgba(col,0.5)  // fillcolor = fallback
-  };});
+    line:{width:0.5,color:colorFor(c)}, fillcolor:colorFor(c)
+  }));
   // Provisioned CU ceiling as a STEP line across the window: it holds each snapshot's
   // configured max CU until the next snapshot and jumps only when CU actually changed,
   // so a CU change is visible at the time it happened. Falls back to a flat line at the
@@ -323,18 +322,36 @@ function renderTopSql(rows, intervalSecs){
   // wait classes present; CPU first for a stable, readable stack order
   const klasses=[...new Set(rows.map(r=>r.wait_class))]
     .sort((a,b)=> a==='CPU'?-1 : b==='CPU'?1 : a.localeCompare(b));
-  const traces=klasses.map(k=>({
-    type:'bar', orientation:'h', name:k,
-    x:items.map(it=>(it.parts[k]||0)*secPer), y:labels,
-    marker:{color:rgba(colorFor(k),0.82), line:{color:colorFor(k),width:1}},
-    customdata:items.map(it=>String(it.query_id)),
-    hovertemplate:'query_id %{customdata}<br>'+k+': %{x:.1f}s active (est.)<extra></extra>'
+  // Draw each CPU/wait segment as a filled rectangle with a horizontal gradient (lighter at
+  // its left edge, fuller at its right), stacked left-to-right per query. Plotly bar traces
+  // can't do per-bar gradients, so we use scatter fills, which support fillgradient.
+  const H=0.34, traces=[];
+  items.forEach((it,yi)=>{
+    let x0=0;
+    klasses.forEach(k=>{
+      const w=(it.parts[k]||0)*secPer; if(w<=0) return;
+      const x1=x0+w, col=colorFor(k);
+      traces.push({
+        type:'scatter', mode:'lines', fill:'toself', hoveron:'fills',
+        x:[x0,x1,x1,x0,x0], y:[yi-H,yi-H,yi+H,yi+H,yi-H],
+        fillgradient:{type:'horizontal', colorscale:[[0,rgba(col,0.30)],[1,rgba(col,0.95)]]},
+        fillcolor:rgba(col,0.85), line:{width:0}, showlegend:false,
+        text:`query_id ${it.query_id}<br>${k}: ${w.toFixed(1)}s active (est.)`, hoverinfo:'text'
+      });
+      x0=x1;
+    });
+  });
+  // one legend entry per wait class (rectangles themselves are hidden from the legend)
+  klasses.forEach(k=>traces.push({
+    type:'scatter', mode:'markers', x:[null], y:[null], name:k,
+    marker:{size:10, color:colorFor(k), symbol:'square'}, showlegend:true, hoverinfo:'skip'
   }));
-  Plotly.react('topSql', traces.length?traces:[{x:[],y:[],type:'bar'}],
-    {...LAYOUT, barmode:'stack', margin:{l:280,r:16,t:10,b:40},
-     xaxis:{...LAYOUT.xaxis,title:'active time (s, est.)',type:'linear',rangemode:'tozero'},
-     yaxis:{...LAYOUT.yaxis,type:'category',automargin:true,tickfont:{size:10},
-            categoryorder:'array',categoryarray:labels}}, CONFIG);
+  Plotly.react('topSql', traces.length?traces:[{x:[],y:[]}],
+    {...LAYOUT, margin:{l:280,r:16,t:10,b:40},
+     xaxis:{...LAYOUT.xaxis,title:'active time (s, est.)',rangemode:'tozero'},
+     yaxis:{...LAYOUT.yaxis, automargin:true, tickfont:{size:10}, tickmode:'array',
+            tickvals:items.map((_,i)=>i), ticktext:labels,
+            range:[-0.6, Math.max(items.length-0.4, 0.6)]}}, CONFIG);
 }
 
 function renderLoadProfile(rows){
