@@ -9,7 +9,8 @@ from datetime import datetime, timezone
 from apscheduler.schedulers.background import BackgroundScheduler
 
 import repo
-from core import target_conn, collect_ash, collect_sys, collect_pgss, endpoint_cu
+from core import (target_conn, collect_ash, collect_sys, collect_pgss, endpoint_cu,
+                  close_target_conns)
 
 log = logging.getLogger("lakebase_snapper.scheduler")
 
@@ -17,6 +18,12 @@ SAMPLE_INTERVAL = float(os.environ.get("SAMPLE_INTERVAL_SECS", "2"))
 SNAPSHOT_INTERVAL = float(os.environ.get("SNAPSHOT_INTERVAL_SECS", "300"))
 RETENTION_DAYS = int(os.environ.get("RETENTION_DAYS", "7"))
 INCLUDE_IDLE_IN_TXN = os.environ.get("INCLUDE_IDLE_IN_TXN", "false").lower() == "true"
+# Also sample fully-idle sessions so the "wait class mix (incl. idle)" pie has data.
+INCLUDE_IDLE = os.environ.get("INCLUDE_IDLE", "true").lower() == "true"
+
+# When paused, the ticks no-op and the target connections are dropped, so a scale-to-zero
+# endpoint isn't held awake by the collector.
+_paused = False
 # A target with dbname '*' is instance-wide (all databases). We must still connect to a
 # real database to read the shared stats views; use this one (needs pg_stat_statements).
 INSTANCE_SENTINEL = "*"
@@ -33,10 +40,12 @@ def _target_conn_scope(t):
 
 
 def _sample_tick():
+    if _paused:
+        return
     for t in repo.list_targets(only_enabled=True):
         try:
             tc, scoped = _target_conn_scope(t)
-            rows = collect_ash(tc, INCLUDE_IDLE_IN_TXN, scoped)
+            rows = collect_ash(tc, INCLUDE_IDLE_IN_TXN, scoped, INCLUDE_IDLE)
             repo.insert_ash(t["id"], rows)
         except Exception as e:
             log.warning("ASH sample failed for %s: %s", t["label"], e)
@@ -58,6 +67,8 @@ def _snapshot_target(t, label="auto"):
 
 
 def _snapshot_tick():
+    if _paused:
+        return
     for t in repo.list_targets(only_enabled=True):
         try:
             snap_id, n = _snapshot_target(t, "auto")
@@ -107,10 +118,31 @@ def start():
     return sch
 
 
+def pause():
+    """Stop collecting: the ticks no-op and target connections are dropped so the
+    monitored endpoint can scale to zero."""
+    global _paused
+    _paused = True
+    try:
+        close_target_conns()
+    except Exception as e:
+        log.warning("closing target connections on pause failed: %s", e)
+    log.info("collection paused (target connections closed)")
+
+
+def resume():
+    """Resume collecting (connections reopen lazily on the next tick)."""
+    global _paused
+    _paused = False
+    log.info("collection resumed")
+
+
 def status():
     if not _scheduler:
-        return {"running": False}
+        return {"running": False, "collecting": False, "paused": _paused}
     return {"running": True,
+            "collecting": not _paused,
+            "paused": _paused,
             "sample_interval_secs": SAMPLE_INTERVAL,
             "snapshot_interval_secs": SNAPSHOT_INTERVAL,
             "retention_days": RETENTION_DAYS,

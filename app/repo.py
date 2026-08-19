@@ -139,6 +139,7 @@ def ash_timeline(target_id, since_min, bucket_secs):
              sample_time, wait_class
       FROM ash_samples
       WHERE target_id=%(t)s AND sample_time >= now() - make_interval(mins => %(m)s)
+        AND state <> 'idle'
     ),
     n AS (SELECT bucket, count(DISTINCT sample_time) nsamp FROM s GROUP BY 1)
     SELECT to_char(s.bucket AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS bucket,
@@ -153,11 +154,23 @@ def ash_timeline(target_id, since_min, bucket_secs):
                 for r in conn.execute(sql, {"t": target_id, "m": since_min, "b": bucket_secs}).fetchall()]
 
 
-def wait_mix(target_id, since_min):
-    sql = """
-    SELECT wait_class, wait_event, count(*) c
+def wait_mix(target_id, since_min, include_idle=False):
+    """Wait-class mix over the window. Default excludes fully-idle sessions (the classic
+    active-only pie). With include_idle=True, idle / idle-in-transaction samples are kept
+    and relabelled as their own classes so the pie also shows idle time."""
+    if include_idle:
+        cls = ("CASE WHEN state='idle' THEN 'Idle' "
+               "WHEN state='idle in transaction' THEN 'Idle in txn' "
+               "ELSE wait_class END")
+        idle_filter = ""
+    else:
+        cls = "wait_class"
+        idle_filter = "AND state <> 'idle'"
+    sql = f"""
+    SELECT {cls} AS wait_class, wait_event, count(*) c
     FROM ash_samples
     WHERE target_id=%s AND sample_time >= now() - make_interval(mins => %s)
+      {idle_filter}
     GROUP BY 1,2 ORDER BY c DESC
     """
     with repo_pool.connection() as conn:
@@ -176,7 +189,7 @@ def top_sql_ash(target_id, since_min, limit=10):
       SELECT query_id, COALESCE(wait_class,'CPU') AS klass, query
       FROM ash_samples
       WHERE target_id=%(t)s AND sample_time >= now() - make_interval(mins => %(m)s)
-        AND query_id IS NOT NULL
+        AND query_id IS NOT NULL AND state <> 'idle'
     ),
     top AS (
       SELECT query_id, count(*) c FROM win GROUP BY query_id ORDER BY c DESC LIMIT %(l)s
@@ -200,6 +213,7 @@ def summary(target_id, since_min):
            min(sample_time), max(sample_time)
     FROM ash_samples
     WHERE target_id=%s AND sample_time >= now() - make_interval(mins => %s)
+      AND state <> 'idle'
     """
     with repo_pool.connection() as conn:
         r = conn.execute(sql, (target_id, since_min)).fetchone()

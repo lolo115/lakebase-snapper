@@ -88,11 +88,14 @@ class RepoConnection(psycopg.Connection):
         return conn
 
 
+# min_size=0 + a short max_idle so that when collection is stopped and the dashboard is
+# idle, the repo connections drop and the endpoint can scale to zero (the repo DB lives on
+# the monitored endpoint). During collection the 2s ASH inserts keep the pool warm.
 repo_pool = ConnectionPool(
     conninfo=(f"dbname={REPO_DB} user={REPO_USER} host={REPO_HOST} "
               f"port={REPO_PORT} sslmode={REPO_SSLMODE}"),
     connection_class=RepoConnection,
-    min_size=1, max_size=8, max_lifetime=TOKEN_TTL_SECONDS,
+    min_size=0, max_size=8, max_lifetime=TOKEN_TTL_SECONDS, max_idle=120.0,
     open=False,
 )
 
@@ -142,6 +145,16 @@ class TargetConn:
             pass
         self._conn = self._connect()
 
+    def close(self):
+        """Drop the persistent connection (reopened lazily on next use)."""
+        with self._lock:
+            try:
+                if self._conn and not self._conn.closed:
+                    self._conn.close()
+            except Exception:
+                pass
+            self._conn = None
+
 
 _host_cache: dict[str, str] = {}
 
@@ -175,6 +188,14 @@ def target_conn(endpoint: str, dbname: str) -> TargetConn:
         return _target_conns[key]
 
 
+def close_target_conns():
+    """Close every persistent target connection, so a stopped collector no longer holds
+    monitored endpoints awake (lets them scale to zero)."""
+    with _target_lock:
+        for tc in _target_conns.values():
+            tc.close()
+
+
 # --------------------------------------------------------------------------------------
 # Collection SQL (ported from the lakebase_snapper CLI)
 # --------------------------------------------------------------------------------------
@@ -192,7 +213,9 @@ FROM pg_stat_activity
 WHERE pid <> pg_backend_pid()
   AND coalesce(application_name,'') NOT LIKE 'lakebase_snapper_app/%%'  -- doubled percent (parameterized); ignore our own connections
   {DATNAME}
-  AND ( state = 'active' OR (%(idle_in_txn)s AND state = 'idle in transaction') )
+  AND ( state = 'active'
+        OR (%(idle_in_txn)s AND state = 'idle in transaction')
+        OR (%(include_idle)s AND state = 'idle') )
 """
 
 SYS_SQL_TMPL = """
@@ -224,10 +247,11 @@ _PGSS_CANDIDATE_COLS = [
 ]
 
 
-def collect_ash(tc: TargetConn, include_idle_in_txn: bool, scoped: bool = True):
+def collect_ash(tc: TargetConn, include_idle_in_txn: bool, scoped: bool = True,
+                include_idle: bool = False):
     datname = "AND datname = current_database()" if scoped else ""
     rows = tc.execute(ASH_SQL_TMPL.replace("{DATNAME}", datname),
-                      {"idle_in_txn": include_idle_in_txn})
+                      {"idle_in_txn": include_idle_in_txn, "include_idle": include_idle})
     out = []
     for r in rows:
         r = [float(v) if isinstance(v, Decimal) else v for v in r]

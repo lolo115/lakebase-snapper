@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>lakebase_snapper — Lakebase performance</title>
+<title>lakebase_snapper · Lakebase performance</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>📊</text></svg>">
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
 <style>
@@ -57,6 +57,15 @@
   .bar>i{display:block;height:100%;background:var(--accent)}
   .plot{width:100%;height:300px}
   .plot.sm{height:260px}
+  .plot.lg{height:440px}
+  .plot.md{height:360px}
+  .pill{display:inline-flex;align-items:center;gap:7px;font-size:12px;padding:6px 11px;
+        border-radius:20px;border:1px solid var(--line);background:var(--panel2)}
+  .pill::before{content:'';width:8px;height:8px;border-radius:50%;background:var(--other)}
+  .pill.on{color:var(--cpu)} .pill.on::before{background:var(--cpu)}
+  .pill.off{color:var(--muted)} .pill.off::before{background:var(--muted)}
+  button.go{background:#238636;border-color:#238636;color:#fff;font-weight:600}
+  button.go:hover{background:#2ea043;border-color:#2ea043}
   #err{color:var(--lock);font-size:12px}
 </style>
 </head>
@@ -69,11 +78,18 @@
     <select id="target"></select>
     <label class="muted">Window</label>
     <select id="mins">
+      <option value="5">5 min</option>
       <option value="15">15 min</option>
+      <option value="30">30 min</option>
       <option value="60" selected>1 hour</option>
       <option value="240">4 hours</option>
+      <option value="360">6 hours</option>
+      <option value="720">12 hours</option>
       <option value="1440">24 hours</option>
+      <option value="custom">Custom…</option>
     </select>
+    <input id="minsCustom" type="number" min="1" step="1" placeholder="min"
+           title="Last N minutes" style="width:78px;display:none">
     <label class="muted">Auto</label>
     <select id="refresh">
       <option value="0">off</option>
@@ -83,6 +99,8 @@
     </select>
     <button id="reload">Refresh</button>
     <button id="snapNow" class="danger" title="Take a snapshot of every enabled target now, then refresh">Snapshot now</button>
+    <span id="collState" class="pill off" title="Background collection status">Collection: …</span>
+    <button id="collToggle" title="Start or stop background collection (stopping lets the endpoint scale to zero)">…</button>
     <span id="status" class="muted"></span>
   </div>
 </header>
@@ -98,21 +116,26 @@
     <div id="ashTimeline" class="plot"></div>
   </div>
   <div class="card col4">
-    <h2>Wait class mix</h2>
+    <h2>Wait class mix (active)</h2>
     <div id="waitMix" class="plot"></div>
   </div>
 
-  <div class="card col6">
+  <div class="card col8">
     <h2>Top SQL by CPU &amp; wait time (ASH)</h2>
-    <div id="topSql" class="plot sm"></div>
+    <div id="topSql" class="plot lg"></div>
   </div>
-  <div class="card col6">
-    <h2>Load profile — transactions/s &amp; cache hit %</h2>
-    <div id="loadProfile" class="plot sm"></div>
+  <div class="card col4">
+    <h2>Wait class mix (incl. idle)</h2>
+    <div id="waitMixIdle" class="plot"></div>
   </div>
 
   <div class="card col12">
-    <h2>Latest snapshot diff — top SQL by execution time</h2>
+    <h2>Load profile: transactions/s &amp; cache hit %</h2>
+    <div id="loadProfile" class="plot md"></div>
+  </div>
+
+  <div class="card col12">
+    <h2>Latest snapshot diff: top SQL by execution time</h2>
     <div id="snapDiffMeta" class="muted" style="margin-bottom:8px"></div>
     <table id="snapDiff"><thead><tr>
       <th>% time</th><th>exec ms</th><th>calls</th><th>ms/call</th><th>rows</th>
@@ -125,7 +148,8 @@
 const WAIT_COLORS = {
   CPU:getCss('--cpu'), IO:getCss('--io'), Lock:getCss('--lock'), LWLock:getCss('--lwlock'),
   Timeout:getCss('--timeout'), IPC:getCss('--ipc'), Client:getCss('--client'),
-  BufferPin:getCss('--other'), Extension:getCss('--other'), Activity:getCss('--other')
+  BufferPin:getCss('--other'), Extension:getCss('--other'), Activity:getCss('--other'),
+  Idle:'#3d444d', 'Idle in txn':'#6e7681'
 };
 function getCss(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim();}
 function colorFor(w){return WAIT_COLORS[w]||getCss('--other');}
@@ -226,7 +250,11 @@ async function loadTargets(){
 }
 
 function tid(){return parseInt($('#target').value);}
-function mins(){return parseInt($('#mins').value);}
+function mins(){
+  const v=$('#mins').value;
+  if(v==='custom') return Math.max(parseInt($('#minsCustom').value)||60, 1);
+  return parseInt(v);
+}
 
 async function refresh(){
   $('#err').textContent='';
@@ -235,20 +263,23 @@ async function refresh(){
   $('#status').textContent='loading…';
   try{
     const m = mins();
-    const [sum, tl, cuNow, cuSeries, wm, ts, lp, sd, st] = await Promise.all([
+    const [sum, tl, cuNow, cuSeries, wm, wmIdle, ts, lp, sd, st] = await Promise.all([
       api(`/api/summary?target_id=${tid()}&mins=${m}`),
       api(`/api/ash-timeline?target_id=${tid()}&mins=${m}&bucket=${bucketFor(m)}`),
       api(`/api/cu-current?target_id=${tid()}`),
       api(`/api/cu-timeline?target_id=${tid()}&mins=${m}`),
       api(`/api/waits?target_id=${tid()}&mins=${m}`),
+      api(`/api/waits?target_id=${tid()}&mins=${m}&include_idle=1`),
       api(`/api/top-sql?target_id=${tid()}&mins=${m}&limit=10`),
       api(`/api/load-profile?target_id=${tid()}&mins=${Math.max(m,240)}`),
       api(`/api/snap-diff?target_id=${tid()}&limit=12`),
       api(`/api/status`)
     ]);
     renderTiles(sum, st);
+    updateCollControls(st);
     renderTimeline(tl, cuSeries, cuNow, m);
-    renderWaitMix(wm);
+    renderWaitMix(wm, 'waitMix');
+    renderWaitMix(wmIdle, 'waitMixIdle');
     renderTopSql(ts, st.sample_interval_secs);
     renderLoadProfile(lp);
     renderSnapDiff(sd);
@@ -268,6 +299,16 @@ function renderTiles(s, st){
   ];
   $('#tiles').innerHTML = tiles.map(([k,v])=>
     `<div class="tile"><div class="v">${v}</div><div class="k">${k}</div></div>`).join('');
+}
+
+// Reflect collection on/off in the header pill + toggle button.
+function updateCollControls(st){
+  const on = !!(st && st.collecting);
+  const pill=$('#collState'), btn=$('#collToggle');
+  pill.textContent='Collection: '+(on?'on':'off');
+  pill.className='pill '+(on?'on':'off');
+  btn.textContent = on?'Stop':'Start';
+  btn.className = on?'danger':'go';
 }
 
 // Build the CU-ceiling step trace from the per-snapshot cu-timeline. Points are anchored at
@@ -337,16 +378,17 @@ function renderTimeline(rows, cuSeries, cuNow, mins){
      xaxis:{...LAYOUT.xaxis, range:[new Date(startMs), new Date(nowMs)]}}, CONFIG);
 }
 
-function renderWaitMix(rows){
+function renderWaitMix(rows, divId){
+  divId = divId || 'waitMix';
   const byClass={};
   rows.forEach(r=>{byClass[r.wait_class]=(byClass[r.wait_class]||0)+r.c;});
   const labels=Object.keys(byClass);
-  Plotly.react('waitMix', [{
+  Plotly.react(divId, [{
     type:'pie', hole:0.62, labels, values:labels.map(l=>byClass[l]),
     marker:{colors:labels.map(colorFor), line:{color:getCss('--panel'),width:2}},
     textinfo:'label+percent', textfont:{size:11}, sort:true
   }], {...LAYOUT, margin:{l:8,r:8,t:8,b:8}, showlegend:false}, CONFIG)
-   .then(()=>applyPieGradients('waitMix'));
+   .then(()=>applyPieGradients(divId));
 }
 
 function renderTopSql(rows, intervalSecs){
@@ -393,7 +435,8 @@ function renderTopSql(rows, intervalSecs){
     marker:{size:10, color:colorFor(k), symbol:'square'}, showlegend:true, hoverinfo:'skip'
   }));
   Plotly.react('topSql', traces.length?traces:[{x:[],y:[]}],
-    {...LAYOUT, margin:{l:280,r:16,t:10,b:40},
+    {...LAYOUT, margin:{l:280,r:120,t:10,b:40},
+     legend:{orientation:'v', x:1.01, xanchor:'left', y:1, yanchor:'top', font:{size:11}},
      xaxis:{...LAYOUT.xaxis,title:'active time (s, est.)',rangemode:'tozero'},
      yaxis:{...LAYOUT.yaxis, automargin:true, tickfont:{size:10}, tickmode:'array',
             tickvals:items.map((_,i)=>i), ticktext:labels,
@@ -422,7 +465,7 @@ function renderLoadProfile(rows){
 function renderSnapDiff(sd){
   const tb=$('#snapDiff tbody');
   if(!sd.available){
-    $('#snapDiffMeta').textContent='Need at least two snapshots — the scheduler takes one every few minutes.';
+    $('#snapDiffMeta').textContent='Need at least two snapshots. The scheduler takes one every few minutes (or use "Snapshot now").';
     tb.innerHTML=''; return;
   }
   $('#snapDiffMeta').innerHTML=`window ${fmtT(sd.from)} → ${fmtT(sd.to)} · `+
@@ -447,9 +490,30 @@ function setupAutoRefresh(){
   if(ms>0) timer=setInterval(refresh, ms);
 }
 
-['target','mins'].forEach(id=>$('#'+id).addEventListener('change',refresh));
+$('#target').addEventListener('change',refresh);
+// Window select: show the custom-minutes input when "Custom…" is picked; refresh otherwise.
+$('#mins').addEventListener('change',()=>{
+  const custom = $('#mins').value==='custom';
+  $('#minsCustom').style.display = custom?'inline-block':'none';
+  if(custom){ $('#minsCustom').focus(); if(!$('#minsCustom').value) return; }
+  refresh();
+});
+$('#minsCustom').addEventListener('change',refresh);
 $('#refresh').addEventListener('change',setupAutoRefresh);
 $('#reload').addEventListener('click',refresh);
+
+// Start/stop background collection (stopping drops connections so the endpoint can sleep).
+$('#collToggle').addEventListener('click', async ()=>{
+  const btn=$('#collToggle'); const turnOn = btn.textContent==='Start';
+  btn.disabled=true; $('#err').textContent='';
+  try{
+    const r=await fetch('/api/collection',{method:'POST',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify({enabled:turnOn})});
+    if(!r.ok) throw new Error('collection -> '+r.status);
+    updateCollControls(await r.json());
+  }catch(e){ $('#err').textContent=String(e); }
+  finally{ btn.disabled=false; }
+});
 
 // Force an immediate snapshot of every enabled target, then refresh the charts.
 $('#snapNow').addEventListener('click', async ()=>{

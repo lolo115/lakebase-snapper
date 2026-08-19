@@ -121,6 +121,21 @@ def api_snapshot_now():
     return {"ok": all(r["ok"] for r in results), "results": results}
 
 
+class CollectionIn(BaseModel):
+    enabled: bool
+
+
+@app.post("/api/collection")
+def api_collection(body: CollectionIn):
+    """Start/stop background collection. Stopping drops target connections so the
+    endpoint can scale to zero. Returns the updated scheduler status."""
+    if body.enabled:
+        scheduler.resume()
+    else:
+        scheduler.pause()
+    return scheduler.status()
+
+
 @app.get("/api/diag")
 def api_diag():
     """Live connectivity self-test — safe to expose (no secrets), invaluable for debugging."""
@@ -189,9 +204,9 @@ def api_cu_current(target_id: int):
 
 
 @app.get("/api/waits")
-def api_waits(target_id: int, mins: int = 60):
+def api_waits(target_id: int, mins: int = 60, include_idle: bool = False):
     _require_target(target_id)
-    return repo.wait_mix(target_id, mins)
+    return repo.wait_mix(target_id, mins, include_idle)
 
 
 @app.get("/api/top-sql")
