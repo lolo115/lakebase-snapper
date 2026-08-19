@@ -238,6 +238,10 @@ def collect_sys(tc: TargetConn):
 def collect_pgss(tc: TargetConn):
     present = {r[0] for r in tc.execute(
         "SELECT column_name FROM information_schema.columns WHERE table_name='pg_stat_statements'")}
+    if not present:
+        # pg_stat_statements isn't installed in this database (the view is per-database).
+        # Skip statement capture gracefully so the snapshot (system stats + CU) still lands.
+        return [], []
     cols = [c for c in _PGSS_CANDIDATE_COLS if c in present]
     toplevel = "toplevel" if "toplevel" in present else "true AS toplevel"
     sql = (f"SELECT queryid::text, userid, dbid, {toplevel}, left(query,4000), "
