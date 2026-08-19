@@ -129,6 +129,16 @@ const WAIT_COLORS = {
 };
 function getCss(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim();}
 function colorFor(w){return WAIT_COLORS[w]||getCss('--other');}
+// #rrggbb -> rgba() with alpha (passes through rgb()/named colors unchanged)
+function rgba(c, a){
+  c=(c||'').trim();
+  if(c[0]==='#'){ const n=parseInt(c.slice(1),16);
+    return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`; }
+  return c;
+}
+// Vertical fill gradient for an area band: faint at the baseline, richer toward the top,
+// giving depth without obscuring the shape. Used on the AAS and tps areas.
+function areaGradient(c){ return {type:'vertical', colorscale:[[0,rgba(c,0.08)],[1,rgba(c,0.72)]]}; }
 const LAYOUT = {paper_bgcolor:'rgba(0,0,0,0)',plot_bgcolor:'rgba(0,0,0,0)',
   font:{color:getCss('--fg'),size:12},margin:{l:48,r:16,t:10,b:36},
   legend:{orientation:'h',y:-0.2,font:{size:11}},
@@ -266,11 +276,12 @@ function renderTimeline(rows, cuSeries, cuNow, mins){
   const classes=[...new Set(rows.map(r=>r.wait_class))];
   const idx={}; rows.forEach(r=>{ const e=new Date(r.bucket).getTime();
     (idx[r.wait_class]=idx[r.wait_class]||{})[e]=r.aas; });
-  const traces=classes.map(c=>({
+  const traces=classes.map(c=>{ const col=colorFor(c); return {
     x:gx, y:grid.map(b=>(idx[c]&&idx[c][b])||0),
     name:c, type:'scatter', mode:'lines', stackgroup:'one',
-    line:{width:0.5,color:colorFor(c)}, fillcolor:colorFor(c)
-  }));
+    line:{width:1.2,color:col},
+    fillgradient:areaGradient(col), fillcolor:rgba(col,0.5)  // fillcolor = fallback
+  };});
   // Provisioned CU ceiling as a STEP line across the window: it holds each snapshot's
   // configured max CU until the next snapshot and jumps only when CU actually changed,
   // so a CU change is visible at the time it happened. Falls back to a flat line at the
@@ -287,9 +298,9 @@ function renderWaitMix(rows){
   rows.forEach(r=>{byClass[r.wait_class]=(byClass[r.wait_class]||0)+r.c;});
   const labels=Object.keys(byClass);
   Plotly.react('waitMix', [{
-    type:'pie', hole:0.55, labels, values:labels.map(l=>byClass[l]),
-    marker:{colors:labels.map(colorFor)}, textinfo:'label+percent',
-    textfont:{size:11}, sort:true
+    type:'pie', hole:0.62, labels, values:labels.map(l=>byClass[l]),
+    marker:{colors:labels.map(colorFor), line:{color:getCss('--panel'),width:2}},
+    textinfo:'label+percent', textfont:{size:11}, sort:true
   }], {...LAYOUT, margin:{l:8,r:8,t:8,b:8}, showlegend:false}, CONFIG);
 }
 
@@ -315,7 +326,7 @@ function renderTopSql(rows, intervalSecs){
   const traces=klasses.map(k=>({
     type:'bar', orientation:'h', name:k,
     x:items.map(it=>(it.parts[k]||0)*secPer), y:labels,
-    marker:{color:colorFor(k)},
+    marker:{color:rgba(colorFor(k),0.82), line:{color:colorFor(k),width:1}},
     customdata:items.map(it=>String(it.query_id)),
     hovertemplate:'query_id %{customdata}<br>'+k+': %{x:.1f}s active (est.)<extra></extra>'
   }));
@@ -330,9 +341,10 @@ function renderLoadProfile(rows){
   const x=rows.map(r=>r.t);
   Plotly.react('loadProfile', [
     {x,y:rows.map(r=>r.tps),name:'tps',type:'scatter',mode:'lines+markers',
-     line:{color:getCss('--io')},yaxis:'y'},
+     line:{color:getCss('--io'),width:2},marker:{size:5},
+     fill:'tozeroy',fillgradient:areaGradient(getCss('--io')),yaxis:'y'},
     {x,y:rows.map(r=>r.cache_hit_pct),name:'cache hit %',type:'scatter',mode:'lines+markers',
-     line:{color:getCss('--cpu')},yaxis:'y2'}
+     line:{color:getCss('--cpu'),width:2},marker:{size:5},yaxis:'y2'}
   ], {...LAYOUT,
       // Wider right margin + automargin on the right axis keeps its title clear of the
       // tick numbers; a fixed [0,100] range with a % suffix shows a full "100%" at the top.
