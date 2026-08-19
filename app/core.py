@@ -208,7 +208,8 @@ SELECT statement_timestamp(),
        CASE WHEN wait_event IS NULL THEN 'CPU' ELSE wait_event_type END AS wait_class,
        wait_event, query_id::text, left(query, 4000),
        EXTRACT(EPOCH FROM (clock_timestamp() - xact_start)),
-       EXTRACT(EPOCH FROM (clock_timestamp() - query_start))
+       EXTRACT(EPOCH FROM (clock_timestamp() - query_start)),
+       datname
 FROM pg_stat_activity
 WHERE pid <> pg_backend_pid()
   AND coalesce(application_name,'') NOT LIKE 'lakebase_snapper_app/%%'  -- doubled percent (parameterized); ignore our own connections

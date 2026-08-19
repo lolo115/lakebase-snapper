@@ -30,9 +30,12 @@ CREATE TABLE IF NOT EXISTS ash_samples (
     query_id      text,
     query         text,
     xact_secs     double precision,
-    query_secs    double precision
+    query_secs    double precision,
+    datname       text
 );
 CREATE INDEX IF NOT EXISTS ix_ash ON ash_samples(target_id, sample_time);
+-- migrate existing deployments that predate the datname column
+ALTER TABLE ash_samples ADD COLUMN IF NOT EXISTS datname text;
 
 CREATE TABLE IF NOT EXISTS snapshots (
     snap_id     serial PRIMARY KEY,
@@ -102,8 +105,8 @@ def insert_ash(target_id, rows):
                 """INSERT INTO ash_samples
                    (target_id, sample_time, pid, usename, application_name, client_addr,
                     backend_type, state, wait_class, wait_event, query_id, query,
-                    xact_secs, query_secs)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    xact_secs, query_secs, datname)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 [(target_id, *r) for r in rows])
         conn.commit()
 
@@ -186,22 +189,24 @@ def top_sql_ash(target_id, since_min, limit=10):
     active time per segment is c * SAMPLE_INTERVAL_SECS (computed client-side)."""
     sql = """
     WITH win AS (
-      SELECT query_id, COALESCE(wait_class,'CPU') AS klass, query
+      SELECT query_id, COALESCE(datname,'?') AS datname,
+             COALESCE(wait_class,'CPU') AS klass, query
       FROM ash_samples
       WHERE target_id=%(t)s AND sample_time >= now() - make_interval(mins => %(m)s)
         AND query_id IS NOT NULL AND state <> 'idle'
     ),
     top AS (
-      SELECT query_id, count(*) c FROM win GROUP BY query_id ORDER BY c DESC LIMIT %(l)s
+      SELECT query_id, datname, count(*) c FROM win
+      GROUP BY query_id, datname ORDER BY c DESC LIMIT %(l)s
     )
-    SELECT w.query_id, w.klass, count(*) c,
+    SELECT w.query_id, w.datname, w.klass, count(*) c,
            max(left(regexp_replace(w.query, '\\s+', ' ', 'g'), 110)) q
-    FROM win w JOIN top t USING (query_id)
-    GROUP BY w.query_id, w.klass
-    ORDER BY w.query_id
+    FROM win w JOIN top t USING (query_id, datname)
+    GROUP BY w.query_id, w.datname, w.klass
+    ORDER BY w.query_id, w.datname
     """
     with repo_pool.connection() as conn:
-        return [dict(zip(("query_id", "wait_class", "c", "query"), r))
+        return [dict(zip(("query_id", "datname", "wait_class", "c", "query"), r))
                 for r in conn.execute(sql, {"t": target_id, "m": since_min, "l": limit}).fetchall()]
 
 

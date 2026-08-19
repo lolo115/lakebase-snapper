@@ -399,16 +399,19 @@ function renderTopSql(rows, intervalSecs){
   // per-SQL bar by wait class (CPU = on-CPU) to show CPU time vs wait time for each query.
   const secPer = Number(intervalSecs) > 0 ? Number(intervalSecs) : 2;
   const byq = {};
-  rows.forEach(r=>{ const k=String(r.query_id);
-    if(!byq[k]) byq[k]={query_id:r.query_id, query:'', total:0, parts:{}};
+  rows.forEach(r=>{ const db=r.datname||'?'; const k=r.query_id+'|'+db;
+    if(!byq[k]) byq[k]={query_id:r.query_id, datname:db, query:'', total:0, parts:{}};
     byq[k].parts[r.wait_class]=(byq[k].parts[r.wait_class]||0)+r.c;
     byq[k].total+=r.c;
     if(r.query) byq[k].query=r.query;
   });
   // ascending by total so the heaviest query sits at the top of the horizontal bars
   const items=Object.values(byq).sort((a,b)=>a.total-b.total);
+  // prefix the DB only when several databases appear (e.g. the instance-wide target)
+  const multiDb = new Set(items.map(it=>it.datname)).size > 1;
   const labels=items.map(it=>{ const q=(it.query||'').replace(/\s+/g,' ').trim();
-    return (q.length>48?q.slice(0,48)+'…':q) || String(it.query_id); });
+    const base=(q.length>48?q.slice(0,48)+'…':q) || String(it.query_id);
+    return multiDb ? `[${it.datname}] ${base}` : base; });
   // wait classes present; CPU first for a stable, readable stack order
   const klasses=[...new Set(rows.map(r=>r.wait_class))]
     .sort((a,b)=> a==='CPU'?-1 : b==='CPU'?1 : a.localeCompare(b));
@@ -426,7 +429,7 @@ function renderTopSql(rows, intervalSecs){
         x:[x0,x1,x1,x0,x0], y:[yi-H,yi-H,yi+H,yi+H,yi-H],
         fillgradient:{type:'horizontal', colorscale:[[0,rgba(col,0.30)],[1,rgba(col,0.95)]]},
         fillcolor:rgba(col,0.85), line:{width:0}, showlegend:false,
-        text:`query_id ${it.query_id}<br>${k}: ${w.toFixed(1)}s active (est.)`, hoverinfo:'text'
+        text:`db ${it.datname} · query_id ${it.query_id}<br>${k}: ${w.toFixed(1)}s active (est.)`, hoverinfo:'text'
       });
       x0=x1;
     });
