@@ -234,8 +234,8 @@ function renderTimeline(rows, cu){
     traces.push({
       x:cu.map(r=>r.t), y:cu.map(r=>r.max_cu),
       name:'CU (max configured)', type:'scatter', mode:'lines+markers',
-      line:{color:'#e8edf6', width:2, shape:'hv', dash:'dot'},
-      marker:{size:4, color:'#e8edf6'},
+      line:{color:'#ff3b30', width:2, shape:'hv', dash:'dot'},
+      marker:{size:4, color:'#ff3b30'},
       hovertemplate:'CU max: %{y}<extra></extra>'
     });
   }
