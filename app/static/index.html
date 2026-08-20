@@ -75,12 +75,15 @@
   button.go{background:#238636;border-color:#238636;color:#fff;font-weight:600}
   button.go:hover{background:#2ea043;border-color:#2ea043}
   #err{color:var(--lock);font-size:12px}
+  /* Fixed width + nowrap so the changing "updated …" text never reflows the header. */
+  #status{min-width:170px;white-space:nowrap;font-size:12px}
 </style>
 </head>
 <body>
 <header>
   <h1>lakebase_snapper <span>· Lakebase performance</span></h1>
   <span id="targetName" class="tname"></span>
+  <span id="status" class="muted"></span>
   <div class="controls">
     <div class="group">
       <span class="glabel">Target</span>
@@ -127,8 +130,6 @@
       <button id="collToggle" title="Start or stop background collection (stopping lets the endpoint scale to zero)">…</button>
       <button id="snapNow" class="danger" title="Take a snapshot of every enabled target now, then refresh">Snapshot now</button>
     </div>
-
-    <span id="status" class="muted"></span>
   </div>
 </header>
 
