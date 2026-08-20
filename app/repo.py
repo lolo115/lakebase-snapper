@@ -212,6 +212,41 @@ def top_sql_ash(target_id, since_min, limit=10):
                 for r in conn.execute(sql, {"t": target_id, "m": since_min, "l": limit}).fetchall()]
 
 
+def sessions(target_id, since_min, limit=25):
+    """Per-session details observed over the window (Oracle-EM-style session list):
+    one row per backend pid with its identity, activity, last state/wait, and last query."""
+    sql = """
+    WITH s AS (
+      SELECT pid, usename, application_name, client_addr, datname, backend_type,
+             state, wait_class, wait_event,
+             left(regexp_replace(query, '\\s+', ' ', 'g'), 200) query, sample_time
+      FROM ash_samples
+      WHERE target_id=%(t)s AND sample_time >= now() - make_interval(mins => %(m)s)
+        AND pid IS NOT NULL
+    )
+    SELECT pid,
+           max(usename) usename, max(application_name) application_name,
+           max(client_addr) client_addr, max(datname) datname, max(backend_type) backend_type,
+           count(*) samples,
+           count(*) FILTER (WHERE state='active') active_samples,
+           (array_agg(state ORDER BY sample_time DESC))[1] last_state,
+           (array_agg(wait_class ORDER BY sample_time DESC))[1] last_wait_class,
+           (array_agg(wait_event ORDER BY sample_time DESC))[1] last_wait_event,
+           (array_agg(query ORDER BY sample_time DESC))[1] last_query,
+           to_char(max(sample_time) AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') last_seen
+    FROM s
+    GROUP BY pid
+    ORDER BY active_samples DESC, samples DESC
+    LIMIT %(l)s
+    """
+    cols = ("pid", "usename", "application_name", "client_addr", "datname", "backend_type",
+            "samples", "active_samples", "last_state", "last_wait_class", "last_wait_event",
+            "last_query", "last_seen")
+    with repo_pool.connection() as conn:
+        return [dict(zip(cols, r))
+                for r in conn.execute(sql, {"t": target_id, "m": since_min, "l": limit}).fetchall()]
+
+
 def summary(target_id, since_min):
     sql = """
     SELECT count(*) total_rows,

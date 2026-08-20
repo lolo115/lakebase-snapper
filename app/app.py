@@ -230,6 +230,12 @@ def api_top_sql(target_id: int, mins: int = 60, limit: int = 10):
     return repo.top_sql_ash(target_id, mins, limit)
 
 
+@app.get("/api/sessions")
+def api_sessions(target_id: int, mins: int = 60, limit: int = 25):
+    _require_target(target_id)
+    return repo.sessions(target_id, mins, limit)
+
+
 @app.get("/api/load-profile")
 def api_load_profile(target_id: int, mins: int = 240):
     _require_target(target_id)

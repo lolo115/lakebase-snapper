@@ -127,9 +127,13 @@
     <div id="waitMixIdle" class="plot md"></div>
   </div>
 
-  <div class="card col12">
+  <div class="card col8">
     <h2>Top SQL by CPU &amp; wait time (ASH)</h2>
     <div id="topSql" class="plot lg"></div>
+  </div>
+  <div class="card col4">
+    <h2>Sessions (window)</h2>
+    <div id="sessions" style="max-height:440px;overflow:auto"></div>
   </div>
 
   <div class="card col12">
@@ -277,7 +281,7 @@ async function refresh(){
   $('#status').textContent='loading…';
   try{
     const m = mins();
-    const [sum, tl, cuNow, cuSeries, conn, wm, wmIdle, ts, lp, sd, st] = await Promise.all([
+    const [sum, tl, cuNow, cuSeries, conn, wm, wmIdle, ts, lp, sd, se, st] = await Promise.all([
       api(`/api/summary?target_id=${tid()}&mins=${m}`),
       api(`/api/ash-timeline?target_id=${tid()}&mins=${m}&bucket=${bucketFor(m)}`),
       api(`/api/cu-current?target_id=${tid()}`),
@@ -288,6 +292,7 @@ async function refresh(){
       api(`/api/top-sql?target_id=${tid()}&mins=${m}&limit=10`),
       api(`/api/load-profile?target_id=${tid()}&mins=${Math.max(m,240)}`),
       api(`/api/snap-diff?target_id=${tid()}&mins=${m}&limit=12`),
+      api(`/api/sessions?target_id=${tid()}&mins=${m}&limit=25`),
       api(`/api/status`)
     ]);
     renderTiles(sum, st);
@@ -296,6 +301,7 @@ async function refresh(){
     renderWaitMix(wm, 'waitMix');
     renderWaitMix(wmIdle, 'waitMixIdle');
     renderTopSql(ts, st.sample_interval_secs);
+    renderSessions(se, st.sample_interval_secs);
     renderLoadProfile(lp);
     renderSnapDiff(sd);
     $('#status').textContent='updated '+new Date().toLocaleTimeString();
@@ -498,6 +504,40 @@ function renderLoadProfile(rows){
               range:[0,100],dtick:20,ticksuffix:'%',automargin:true,
               gridcolor:'rgba(0,0,0,0)',zeroline:false}
      }, CONFIG);
+}
+
+function stateColor(s){
+  if(s==='active') return 'var(--cpu)';
+  if(s==='idle in transaction') return 'var(--lwlock)';
+  if(s==='idle') return 'var(--muted)';
+  return 'var(--client)';
+}
+// Oracle-EM-style session list for the window: one row per backend, active sessions first.
+function renderSessions(rows, intervalSecs){
+  const secPer = Number(intervalSecs) > 0 ? Number(intervalSecs) : 2;
+  const el=$('#sessions');
+  if(!rows || !rows.length){
+    el.innerHTML='<div class="muted" style="font-size:12px">No sessions sampled in this window.</div>';
+    return;
+  }
+  const body = rows.map(r=>{
+    const who = escapeHtml((r.usename||'?') + (r.application_name?(' / '+r.application_name):''));
+    const st = r.last_state||'?';
+    const activeS = (r.active_samples||0)*secPer;
+    const wait = r.last_wait_class ? (r.last_wait_event?`${r.last_wait_class}: ${r.last_wait_event}`:r.last_wait_class) : '-';
+    const title = escapeHtml(
+      `pid ${r.pid}\nuser ${r.usename||'?'}\napp ${r.application_name||'?'}\n`+
+      `client ${r.client_addr||'?'}\ndb ${r.datname||'?'}\nbackend ${r.backend_type||'?'}\n`+
+      `state ${st}\nwait ${wait}\nactive ~${activeS.toFixed(0)}s (${r.samples} samples)\n`+
+      `last seen ${fmtT(r.last_seen)}\nquery: ${r.last_query||''}`);
+    return `<tr title="${title}">
+      <td>${who}<div class="muted" style="font-size:11px">${escapeHtml(r.datname||'')}${r.pid?(' · pid '+r.pid):''}</div></td>
+      <td><span style="color:${stateColor(st)}">●</span> ${escapeHtml(st)}</td>
+      <td class="num">${activeS?activeS.toFixed(0)+'s':'-'}</td>
+    </tr>`;
+  }).join('');
+  el.innerHTML='<table><thead><tr><th>session</th><th>state</th><th class="num">active</th></tr></thead>'+
+               '<tbody>'+body+'</tbody></table>';
 }
 
 function renderSnapDiff(sd){
