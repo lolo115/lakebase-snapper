@@ -28,6 +28,10 @@
   .tname .sub{color:var(--muted);font-size:12px}
   .tname:empty{display:none}
   .controls{display:flex;gap:10px;align-items:center;margin-left:auto;flex-wrap:wrap}
+  .group{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap;
+         padding:6px 12px;border:1px solid var(--line);border-radius:10px;background:transparent}
+  .glabel{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--accent);
+          font-weight:700;margin-right:2px}
   select,button,input{background:var(--panel2);color:var(--fg);border:1px solid var(--line);
         border-radius:7px;padding:7px 10px;font-size:13px}
   button{cursor:pointer}
@@ -78,41 +82,52 @@
   <h1>lakebase_snapper <span>· Lakebase performance</span></h1>
   <span id="targetName" class="tname"></span>
   <div class="controls">
-    <label class="muted">Target</label>
-    <select id="target"></select>
-    <label class="muted">Window</label>
-    <select id="mins">
-      <option value="5">5 min</option>
-      <option value="15">15 min</option>
-      <option value="30">30 min</option>
-      <option value="60" selected>1 hour</option>
-      <option value="240">4 hours</option>
-      <option value="360">6 hours</option>
-      <option value="720">12 hours</option>
-      <option value="1440">24 hours</option>
-      <option value="custom">Custom…</option>
-    </select>
-    <input id="minsCustom" type="number" min="1" step="1" placeholder="min"
-           title="Last N minutes" style="width:78px;display:none">
-    <label class="muted">Collect every</label>
-    <select id="sampleInterval" title="ASH data-collection frequency">
-      <option value="1">1s</option>
-      <option value="2" selected>2s</option>
-      <option value="5">5s</option>
-      <option value="10">10s</option>
-      <option value="30">30s</option>
-    </select>
-    <label class="muted">Auto</label>
-    <select id="refresh">
-      <option value="0">off</option>
-      <option value="5000">5s</option>
-      <option value="15000" selected>15s</option>
-      <option value="60000">60s</option>
-    </select>
-    <button id="reload">Refresh</button>
-    <button id="snapNow" class="danger" title="Take a snapshot of every enabled target now, then refresh">Snapshot now</button>
-    <span id="collState" class="pill off" title="Background collection status">Collection: …</span>
-    <button id="collToggle" title="Start or stop background collection (stopping lets the endpoint scale to zero)">…</button>
+    <div class="group">
+      <span class="glabel">Target</span>
+      <select id="target"></select>
+    </div>
+
+    <div class="group" title="How the dashboard is displayed (does not affect data collection)">
+      <span class="glabel">View</span>
+      <label class="muted">Window</label>
+      <select id="mins">
+        <option value="5">5 min</option>
+        <option value="15">15 min</option>
+        <option value="30">30 min</option>
+        <option value="60" selected>1 hour</option>
+        <option value="240">4 hours</option>
+        <option value="360">6 hours</option>
+        <option value="720">12 hours</option>
+        <option value="1440">24 hours</option>
+        <option value="custom">Custom…</option>
+      </select>
+      <input id="minsCustom" type="number" min="1" step="1" placeholder="min"
+             title="Last N minutes" style="width:78px;display:none">
+      <label class="muted">Auto-refresh</label>
+      <select id="refresh">
+        <option value="0">off</option>
+        <option value="5000">5s</option>
+        <option value="15000" selected>15s</option>
+        <option value="60000">60s</option>
+      </select>
+      <button id="reload">Refresh now</button>
+    </div>
+
+    <div class="group" title="How performance data is gathered from the endpoint">
+      <span class="glabel">Collection</span>
+      <label class="muted">Sample every</label>
+      <select id="sampleInterval" title="ASH sampling frequency">
+        <option value="1">1s</option>
+        <option value="2" selected>2s</option>
+        <option value="5">5s</option>
+        <option value="10">10s</option>
+        <option value="30">30s</option>
+      </select>
+      <span id="collState" class="pill off" title="Background collection status">Collection: …</span>
+      <button id="collToggle" title="Start or stop background collection (stopping lets the endpoint scale to zero)">…</button>
+      <button id="snapNow" class="danger" title="Take a snapshot of every enabled target now, then refresh">Snapshot now</button>
+    </div>
+
     <span id="status" class="muted"></span>
   </div>
 </header>
