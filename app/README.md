@@ -39,7 +39,8 @@ includes a custom "last N minutes") shows:
 - **Average Active Sessions by wait class**: stacked AAS over time, with the configured
   **CU ceiling** drawn as a red step line (it steps when the endpoint's CU changes) and a
   **"CPU used (from ASH)"** overlay (average sessions on CPU, a proxy for used vCPU, since
-  the platform's live vCPU metric is not exposed to the app).
+  the platform's live vCPU metric is not exposed to the app). A dotted **connections (now)**
+  line on a secondary right axis shows the current client connection count (active + idle).
 - **Wait class mix (active)** and **Wait class mix (incl. idle)**: two donuts; the second
   also counts Idle / Idle-in-transaction time.
 - **Top SQL by CPU & wait time**: per statement, active time split into CPU + each wait
