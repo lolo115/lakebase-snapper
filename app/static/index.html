@@ -45,8 +45,8 @@
   .card h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);
            margin:0 0 10px}
   .col12{grid-column:span 12}.col8{grid-column:span 8}.col6{grid-column:span 6}
-  .col4{grid-column:span 4}
-  @media(max-width:1000px){.col8,.col6,.col4{grid-column:span 12}}
+  .col4{grid-column:span 4}.col3{grid-column:span 3}
+  @media(max-width:1000px){.col8,.col6,.col4,.col3{grid-column:span 12}}
   .tiles{display:flex;gap:14px;flex-wrap:wrap}
   .tile{flex:1;min-width:130px;background:var(--panel2);border:1px solid var(--line);
         border-radius:10px;padding:12px 14px}
@@ -61,11 +61,11 @@
   .muted{color:var(--muted)}
   .bar{height:6px;background:var(--panel2);border-radius:4px;overflow:hidden}
   .bar>i{display:block;height:100%;background:var(--accent)}
-  .plot{width:100%;height:300px}
+  .plot{width:100%;height:300px;resize:both;overflow:hidden;min-width:220px;min-height:160px}
   .plot.sm{height:260px}
   .plot.lg{height:440px}
   .plot.md{height:360px}
-  .scrollbox{overflow:auto;width:100%;height:440px}
+  .scrollbox{overflow:auto;width:100%;height:440px;resize:both;min-width:260px;min-height:200px}
   #sessions td, #snapDiff td, #snapDiff th{white-space:nowrap}
   .pill{display:inline-flex;align-items:center;gap:7px;font-size:12px;padding:6px 11px;
         border-radius:20px;border:1px solid var(--line);background:var(--panel2)}
@@ -138,16 +138,15 @@
     <div id="err"></div>
   </div>
 
-  <div class="card col12">
+  <div class="card col6">
     <h2>Average Active Sessions by wait class</h2>
     <div id="ashTimeline" class="plot md"></div>
   </div>
-
-  <div class="card col6">
+  <div class="card col3">
     <h2>Wait class mix (active)</h2>
     <div id="waitMix" class="plot md"></div>
   </div>
-  <div class="card col6">
+  <div class="card col3">
     <h2>Wait class mix (incl. idle)</h2>
     <div id="waitMixIdle" class="plot md"></div>
   </div>
@@ -662,10 +661,20 @@ $('#snapNow').addEventListener('click', async ()=>{
   finally{ b.disabled=false; b.textContent=label; }
 });
 
+// Reflow each Plotly chart when the user drag-resizes its (resizable) pane.
+function setupResizeObservers(){
+  if(!window.ResizeObserver) return;
+  const ro=new ResizeObserver(es=>{ for(const e of es){ try{ Plotly.Plots.resize(e.target); }catch(_){} } });
+  ['ashTimeline','waitMix','waitMixIdle','topSql','loadProfile'].forEach(id=>{
+    const el=document.getElementById(id); if(el) ro.observe(el);
+  });
+}
+
 (async function init(){
   await loadTargets();
   await refresh();
   setupAutoRefresh();
+  setupResizeObservers();
 })();
 </script>
 </body>
