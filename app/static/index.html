@@ -290,7 +290,7 @@ async function refresh(){
       api(`/api/ash-timeline?target_id=${tid()}&mins=${m}&bucket=${bucketFor(m)}`),
       api(`/api/cu-current?target_id=${tid()}`),
       api(`/api/cu-timeline?target_id=${tid()}&mins=${m}`),
-      api(`/api/conn-count?target_id=${tid()}`),
+      api(`/api/conn-timeline?target_id=${tid()}&mins=${m}&bucket=${bucketFor(m)}`),
       api(`/api/waits?target_id=${tid()}&mins=${m}`),
       api(`/api/waits?target_id=${tid()}&mins=${m}&include_idle=1`),
       api(`/api/top-sql?target_id=${tid()}&mins=${m}&limit=10`),
@@ -398,12 +398,13 @@ function renderTimeline(rows, cuSeries, cuNow, conn, mins){
       hovertemplate:'CPU used ~%{y:.2f} (avg sessions on CPU, from ASH)<extra></extra>'
     });
   }
-  // Current number of client connections (active + idle) as a dotted reference line on a
-  // secondary right axis (its scale differs from AAS/CU, so it gets its own axis).
-  if(conn && conn.connections!=null){
+  // Connection count (active + idle) over time on a secondary right axis, so the ramp is
+  // visible (its scale differs from AAS/CU, so it gets its own axis). Derived from ASH.
+  if(conn && conn.length){
+    const cidx={}; conn.forEach(r=>{ cidx[new Date(r.bucket).getTime()]=Number(r.conns); });
     traces.push({
-      x:[new Date(startMs), new Date(nowMs)], y:[conn.connections, conn.connections],
-      name:'connections (now)', type:'scatter', mode:'lines', yaxis:'y2',
+      x:gx, y:grid.map(b=> cidx[b]!==undefined ? cidx[b] : null),
+      name:'connections', type:'scatter', mode:'lines', yaxis:'y2', connectgaps:false,
       line:{color:'#39c5cf', width:2, dash:'dot'},
       hovertemplate:'connections (active+idle): %{y}<extra></extra>'
     });

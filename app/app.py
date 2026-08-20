@@ -203,6 +203,14 @@ def api_cu_current(target_id: int):
     return repo.current_max_cu(target_id)
 
 
+@app.get("/api/conn-timeline")
+def api_conn_timeline(target_id: int, mins: int = 60, bucket: int = 10):
+    """Average client connection count (active + idle) per bucket, so the AAS chart can plot
+    the connection count over time (the ramp), not just a current value."""
+    _require_target(target_id)
+    return repo.conn_timeline(target_id, mins, bucket)
+
+
 @app.get("/api/conn-count")
 def api_conn_count(target_id: int):
     """Live count of client connections (active + idle) for the target's scope, for the

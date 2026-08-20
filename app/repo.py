@@ -159,6 +159,28 @@ def ash_timeline(target_id, since_min, bucket_secs):
                 for r in conn.execute(sql, {"t": target_id, "m": since_min, "b": bucket_secs}).fetchall()]
 
 
+def conn_timeline(target_id, since_min, bucket_secs):
+    """Average client connection count (active + idle) per time bucket, derived from ASH
+    samples (each poll captures every session), so the connection ramp is visible over time."""
+    sql = """
+    WITH s AS (
+      SELECT date_bin(make_interval(secs => %(b)s), sample_time, 'epoch') AS bucket,
+             sample_time, pid
+      FROM ash_samples
+      WHERE target_id=%(t)s AND sample_time >= now() - make_interval(mins => %(m)s)
+    ),
+    per_sample AS (
+      SELECT bucket, sample_time, count(DISTINCT pid) c FROM s GROUP BY bucket, sample_time
+    )
+    SELECT to_char(bucket AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') bucket,
+           round(avg(c), 2) conns
+    FROM per_sample GROUP BY bucket ORDER BY bucket
+    """
+    with repo_pool.connection() as conn:
+        return [dict(zip(("bucket", "conns"), r))
+                for r in conn.execute(sql, {"t": target_id, "m": since_min, "b": bucket_secs}).fetchall()]
+
+
 def wait_mix(target_id, since_min, include_idle=False):
     """Wait-class mix over the window. Default excludes fully-idle sessions (the classic
     active-only pie). With include_idle=True, idle / idle-in-transaction samples are kept
