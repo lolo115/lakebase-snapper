@@ -123,7 +123,7 @@
     <div id="waitMix" class="plot md"></div>
   </div>
   <div class="card col6">
-    <h2>Wait class mix (incl. idle-in-txn)</h2>
+    <h2>Wait class mix (incl. idle)</h2>
     <div id="waitMixIdle" class="plot md"></div>
   </div>
 
@@ -277,11 +277,12 @@ async function refresh(){
   $('#status').textContent='loading…';
   try{
     const m = mins();
-    const [sum, tl, cuNow, cuSeries, wm, wmIdle, ts, lp, sd, st] = await Promise.all([
+    const [sum, tl, cuNow, cuSeries, conn, wm, wmIdle, ts, lp, sd, st] = await Promise.all([
       api(`/api/summary?target_id=${tid()}&mins=${m}`),
       api(`/api/ash-timeline?target_id=${tid()}&mins=${m}&bucket=${bucketFor(m)}`),
       api(`/api/cu-current?target_id=${tid()}`),
       api(`/api/cu-timeline?target_id=${tid()}&mins=${m}`),
+      api(`/api/conn-count?target_id=${tid()}`),
       api(`/api/waits?target_id=${tid()}&mins=${m}`),
       api(`/api/waits?target_id=${tid()}&mins=${m}&include_idle=1`),
       api(`/api/top-sql?target_id=${tid()}&mins=${m}&limit=10`),
@@ -291,7 +292,7 @@ async function refresh(){
     ]);
     renderTiles(sum, st);
     updateCollControls(st);
-    renderTimeline(tl, cuSeries, cuNow, m);
+    renderTimeline(tl, cuSeries, cuNow, conn, m);
     renderWaitMix(wm, 'waitMix');
     renderWaitMix(wmIdle, 'waitMixIdle');
     renderTopSql(ts, st.sample_interval_secs);
@@ -353,7 +354,7 @@ function buildCuTrace(cuSeries, cuNow, startMs, nowMs){
   };
 }
 
-function renderTimeline(rows, cuSeries, cuNow, mins){
+function renderTimeline(rows, cuSeries, cuNow, conn, mins){
   // Build a contiguous, epoch-aligned bucket grid across the whole window so the chart is
   // continuous (idle buckets show 0) and the time axis is stable on every refresh.
   const bms = bucketFor(mins)*1000;
@@ -387,8 +388,20 @@ function renderTimeline(rows, cuSeries, cuNow, mins){
       hovertemplate:'CPU used ~%{y:.2f} (avg sessions on CPU, from ASH)<extra></extra>'
     });
   }
+  // Current number of client connections (active + idle) as a dotted reference line on a
+  // secondary right axis (its scale differs from AAS/CU, so it gets its own axis).
+  if(conn && conn.connections!=null){
+    traces.push({
+      x:[new Date(startMs), new Date(nowMs)], y:[conn.connections, conn.connections],
+      name:'connections (now)', type:'scatter', mode:'lines', yaxis:'y2',
+      line:{color:'#39c5cf', width:2, dash:'dot'},
+      hovertemplate:'connections (active+idle): %{y}<extra></extra>'
+    });
+  }
   Plotly.react('ashTimeline', traces.length?traces:[{x:[],y:[]}],
     {...LAYOUT, yaxis:{...LAYOUT.yaxis,title:'AAS · CU',rangemode:'tozero'},
+     yaxis2:{overlaying:'y', side:'right', title:'connections', rangemode:'tozero',
+             showgrid:false, zeroline:false, tickfont:{size:10}},
      xaxis:{...LAYOUT.xaxis, range:[new Date(startMs), new Date(nowMs)]}}, CONFIG);
 }
 

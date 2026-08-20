@@ -40,10 +40,8 @@ includes a custom "last N minutes") shows:
   **CU ceiling** drawn as a red step line (it steps when the endpoint's CU changes) and a
   **"CPU used (from ASH)"** overlay (average sessions on CPU, a proxy for used vCPU, since
   the platform's live vCPU metric is not exposed to the app).
-- **Wait class mix (active)** and **Wait class mix (incl. idle-in-txn)**: two donuts. The
-  active one is CPU + wait classes for `state='active'`; the second adds an **Idle in txn**
-  slice (sessions holding a transaction open, which hold locks/snapshots). Benign plain-idle
-  pool connections are not shown.
+- **Wait class mix (active)** and **Wait class mix (incl. idle)**: two donuts; the second
+  also counts Idle / Idle-in-transaction time.
 - **Top SQL by CPU & wait time**: per statement, active time split into CPU + each wait
   class (estimated as sample_count x sample-interval). Each bar shows the source
   **database**; system/maintenance databases (`postgres`, `template*`) are flagged in amber
@@ -84,8 +82,8 @@ Header controls: **Snapshot now** (force an immediate snapshot of every enabled 
 | `REPO_DBNAME` / `REPO_SCHEMA` | `lakebase_snapper` / `snap` |
 | `SEED_TARGETS` | JSON array of monitored targets `[{label, endpoint, dbname}]` |
 | `SAMPLE_INTERVAL_SECS` / `SNAPSHOT_INTERVAL_SECS` / `RETENTION_DAYS` | Cadence + retention |
-| `INCLUDE_IDLE_IN_TXN` | Sample idle-in-transaction sessions (Idle-in-txn pie slice); default on |
-| `INCLUDE_IDLE` | Sample benign plain-idle sessions; default off (not shown in the UI) |
+| `INCLUDE_IDLE_IN_TXN` | Also sample `idle in transaction` sessions |
+| `INCLUDE_IDLE` | Also sample fully-idle sessions (feeds the "incl. idle" wait pie); default on |
 | `INSTANCE_CONNECT_DB` | DB the instance-wide `*` target connects through (default `postgres`) |
 
 Runtime API: `GET/POST /api/targets`, `POST /api/targets/{id}/enabled`,
@@ -165,8 +163,8 @@ databricks apps deploy lakebase-snapper --source-code-path "/Workspace/Users/$EM
   the dashboard is idle (set Auto-refresh to off), the repo pool releases too and the
   endpoint can scale to zero.
 - **ASH needs activity:** an idle target yields no *active* ASH rows; snapshots still accrue
-  from cumulative counters. Idle-in-transaction sessions are captured (for the incl-idle-in-txn
-  pie); benign plain-idle connections are not captured by default (`INCLUDE_IDLE`).
+  from cumulative counters. Fully-idle sessions are captured separately (for the idle pie)
+  when `INCLUDE_IDLE` is on.
 - **Real workload only:** Top SQL and the snapshot diff exclude the app's own collector/repo
   queries. Statements in system/maintenance databases (`postgres`, `template*`), e.g. Lakebase
   platform monitoring, are still shown but flagged in amber (gear icon) since they are not

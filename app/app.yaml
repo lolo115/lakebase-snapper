@@ -46,6 +46,4 @@ env:
   - name: RETENTION_DAYS
     value: '7'
   - name: INCLUDE_IDLE_IN_TXN
-    value: 'true'
-  - name: INCLUDE_IDLE
     value: 'false'

@@ -19,7 +19,7 @@ from pydantic import BaseModel
 
 import repo
 import scheduler
-from core import repo_pool, target_conn, IS_APP
+from core import repo_pool, target_conn, IS_APP, count_connections
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -201,6 +201,21 @@ def api_cu_timeline(target_id: int, mins: int = 60):
 def api_cu_current(target_id: int):
     _require_target(target_id)
     return repo.current_max_cu(target_id)
+
+
+@app.get("/api/conn-count")
+def api_conn_count(target_id: int):
+    """Live count of client connections (active + idle) for the target's scope, for the
+    dotted connections line on the AAS chart."""
+    _require_target(target_id)
+    t = next((x for x in repo.list_targets() if x["id"] == target_id), None)
+    if not t:
+        raise HTTPException(404, "unknown target_id")
+    try:
+        tc, scoped = scheduler._target_conn_scope(t)
+        return {"connections": count_connections(tc, scoped)}
+    except Exception as e:
+        return {"connections": None, "error": f"{type(e).__name__}: {e}"}
 
 
 @app.get("/api/waits")

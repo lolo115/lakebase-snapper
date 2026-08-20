@@ -260,6 +260,19 @@ def collect_ash(tc: TargetConn, include_idle_in_txn: bool, scoped: bool = True,
     return out
 
 
+def count_connections(tc: TargetConn, scoped: bool = True):
+    """Current client connection count (active + idle), excluding our own app connections.
+    Scoped to the target database, or instance-wide for the '*' target."""
+    datname = "AND datname = current_database()" if scoped else ""
+    sql = ("SELECT count(*) FROM pg_stat_activity "
+           "WHERE pid <> pg_backend_pid() "
+           "AND backend_type = 'client backend' "
+           "AND coalesce(application_name,'') NOT LIKE %(pat)s "
+           f"{datname}")
+    r = tc.execute(sql, {"pat": "lakebase_snapper_app/%"})
+    return int(r[0][0]) if r and r[0] and r[0][0] is not None else 0
+
+
 def collect_sys(tc: TargetConn, scoped: bool = True):
     dbf = "datname = current_database()" if scoped else "datname IS NOT NULL"
     sys = tc.execute(SYS_SQL_TMPL.replace("{DBFILTER}", dbf))[0][0]
