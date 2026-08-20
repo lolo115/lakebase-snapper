@@ -431,18 +431,14 @@ function renderTimeline(rows, cuSeries, cuNow, conn, mins){
     const cidx={}; conn.forEach(r=>{ cidx[new Date(r.bucket).getTime()]=Number(r.conns); });
     traces.push({
       x:gx, y:grid.map(b=> cidx[b]!==undefined ? cidx[b] : null),
-      name:'connections', type:'scatter', mode:'lines', yaxis:'y2', connectgaps:false,
+      name:'connections', type:'scatter', mode:'lines', connectgaps:false,
       line:{color:'#39c5cf', width:2, dash:'dot'},
       hovertemplate:'connections (active+idle): %{y}<extra></extra>'
     });
   }
   Plotly.react('ashTimeline', traces.length?traces:[{x:[],y:[]}],
-    {...LAYOUT, margin:{...LAYOUT.margin, r:64},
-     yaxis:{...LAYOUT.yaxis,title:'AAS · CU',rangemode:'tozero'},
-     // automargin + title standoff keep the "connections" title clear of its tick numbers
-     yaxis2:{overlaying:'y', side:'right', title:{text:'connections', standoff:8},
-             rangemode:'tozero', showgrid:false, zeroline:false, tickfont:{size:10},
-             automargin:true},
+    {...LAYOUT,
+     yaxis:{...LAYOUT.yaxis,title:'AAS · CU · connections',rangemode:'tozero'},
      xaxis:{...LAYOUT.xaxis, range:[new Date(startMs), new Date(nowMs)]}}, CONFIG);
 }
 
