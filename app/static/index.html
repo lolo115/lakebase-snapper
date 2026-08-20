@@ -256,6 +256,8 @@ const $ = s=>document.querySelector(s);
 let timer=null;
 let TARGETS=[];
 let SHOW_CONN=true;   // toggled by the "Hide/Show connections" button on the AAS chart
+let SEL=null;         // {from,to} epoch seconds when a range is selected on the AAS chart
+let LAST_START=0, LAST_END=0;  // last drawn window (ms), to ignore our own zoom relayouts
 
 function activeTarget(){ return TARGETS.find(t=>t.id===tid()); }
 
@@ -302,8 +304,19 @@ async function loadTargets(){
 function tid(){return parseInt($('#target').value);}
 function mins(){
   const v=$('#mins').value;
+  if(v==='selection' && SEL) return Math.max(1, Math.round((SEL.to-SEL.from)/60));
   if(v==='custom') return Math.max(parseInt($('#minsCustom').value)||60, 1);
   return parseInt(v);
+}
+// Reflect an absolute selected range (from the AAS box-select) in the Window control.
+function updateWindowControl(){
+  const sel=$('#mins'); let opt=sel.querySelector('option[value="selection"]');
+  if(SEL){
+    if(!opt){ opt=document.createElement('option'); opt.value='selection'; sel.appendChild(opt); }
+    opt.textContent='Selection ('+new Date(SEL.from*1000).toLocaleTimeString()+' to '+
+                    new Date(SEL.to*1000).toLocaleTimeString()+')';
+    sel.value='selection'; $('#minsCustom').style.display='none';
+  } else if(opt){ opt.remove(); }
 }
 
 async function refresh(){
@@ -312,24 +325,31 @@ async function refresh(){
   if(isNaN(tid())){ $('#err').textContent='No target selected. Add one via /api/targets.'; return; }
   $('#status').textContent='loading…';
   try{
+    // One window for EVERY panel: an absolute [from,to] selection, or the last `mins`.
     const m = mins();
+    const nowMs = Date.now();
+    const startMs = SEL ? SEL.from*1000 : nowMs - m*60000;
+    const endMs   = SEL ? SEL.to*1000   : nowMs;
+    const bkt = bucketFor(Math.max(1, Math.round((endMs-startMs)/60000)));
+    const w = SEL ? `from=${SEL.from}&to=${SEL.to}` : `mins=${m}`;
+    LAST_START = startMs; LAST_END = endMs;
     const [sum, tl, cuNow, cuSeries, conn, wm, wmIdle, ts, lp, sd, se, st] = await Promise.all([
-      api(`/api/summary?target_id=${tid()}&mins=${m}`),
-      api(`/api/ash-timeline?target_id=${tid()}&mins=${m}&bucket=${bucketFor(m)}`),
+      api(`/api/summary?target_id=${tid()}&${w}`),
+      api(`/api/ash-timeline?target_id=${tid()}&${w}&bucket=${bkt}`),
       api(`/api/cu-current?target_id=${tid()}`),
-      api(`/api/cu-timeline?target_id=${tid()}&mins=${m}`),
-      api(`/api/conn-timeline?target_id=${tid()}&mins=${m}&bucket=${bucketFor(m)}`),
-      api(`/api/waits?target_id=${tid()}&mins=${m}`),
-      api(`/api/waits?target_id=${tid()}&mins=${m}&include_idle=1`),
-      api(`/api/top-sql?target_id=${tid()}&mins=${m}&limit=10`),
-      api(`/api/load-profile?target_id=${tid()}&mins=${Math.max(m,240)}`),
-      api(`/api/snap-diff?target_id=${tid()}&mins=${m}&limit=12`),
-      api(`/api/sessions?target_id=${tid()}&mins=${m}&limit=25`),
+      api(`/api/cu-timeline?target_id=${tid()}&${w}`),
+      api(`/api/conn-timeline?target_id=${tid()}&${w}&bucket=${bkt}`),
+      api(`/api/waits?target_id=${tid()}&${w}`),
+      api(`/api/waits?target_id=${tid()}&${w}&include_idle=1`),
+      api(`/api/top-sql?target_id=${tid()}&${w}&limit=10`),
+      api(`/api/load-profile?target_id=${tid()}&${w}`),
+      api(`/api/snap-diff?target_id=${tid()}&${w}&limit=12`),
+      api(`/api/sessions?target_id=${tid()}&${w}&limit=25`),
       api(`/api/status`)
     ]);
     renderTiles(sum, st);
     updateCollControls(st);
-    renderTimeline(tl, cuSeries, cuNow, conn, m);
+    renderTimeline(tl, cuSeries, cuNow, conn, startMs, endMs, bkt);
     renderWaitMix(wm, 'waitMix');
     renderWaitMix(wmIdle, 'waitMixIdle');
     renderTopSql(ts, st.sample_interval_secs);
@@ -396,13 +416,12 @@ function buildCuTrace(cuSeries, cuNow, startMs, nowMs){
   };
 }
 
-function renderTimeline(rows, cuSeries, cuNow, conn, mins){
+function renderTimeline(rows, cuSeries, cuNow, conn, startMs, endMs, bucketSecs){
   // Build a contiguous, epoch-aligned bucket grid across the whole window so the chart is
   // continuous (idle buckets show 0) and the time axis is stable on every refresh.
-  const bms = bucketFor(mins)*1000;
-  const nowMs = Date.now();
-  const startMs = nowMs - mins*60000;
-  const grid=[]; for(let b=Math.floor(startMs/bms)*bms; b<=nowMs; b+=bms) grid.push(b);
+  const bms = bucketSecs*1000;
+  const nowMs = endMs;
+  const grid=[]; for(let b=Math.floor(startMs/bms)*bms; b<=endMs; b+=bms) grid.push(b);
   const gx = grid.map(b=>new Date(b));
   const classes=[...new Set(rows.map(r=>r.wait_class))];
   const idx={}; rows.forEach(r=>{ const e=new Date(r.bucket).getTime();
@@ -442,8 +461,9 @@ function renderTimeline(rows, cuSeries, cuNow, conn, mins){
     });
   }
   Plotly.react('ashTimeline', traces.length?traces:[{x:[],y:[]}],
-    {...LAYOUT,
-     yaxis:{...LAYOUT.yaxis,title:'AAS · CU · connections',rangemode:'tozero'},
+    {...LAYOUT, dragmode:'zoom',
+     // y fixed so a drag zooms only the time axis (a time-range selection); y auto-scales to data
+     yaxis:{...LAYOUT.yaxis,title:'AAS · CU · connections',rangemode:'tozero',fixedrange:true},
      xaxis:{...LAYOUT.xaxis, range:[new Date(startMs), new Date(nowMs)]}}, CONFIG);
 }
 
@@ -613,6 +633,9 @@ function setupAutoRefresh(){
 $('#target').addEventListener('change',refresh);
 // Window select: show the custom-minutes input when "Custom…" is picked; refresh otherwise.
 $('#mins').addEventListener('change',()=>{
+  if($('#mins').value!=='selection'){        // picking a preset/custom clears any chart selection
+    SEL=null; const o=$('#mins').querySelector('option[value="selection"]'); if(o) o.remove();
+  }
   const custom = $('#mins').value==='custom';
   $('#minsCustom').style.display = custom?'inline-block':'none';
   if(custom){ $('#minsCustom').focus(); if(!$('#minsCustom').value) return; }
@@ -638,6 +661,7 @@ $('#sampleInterval').addEventListener('change', async ()=>{
     if(!r.ok) throw new Error('collection-interval -> '+r.status);
     updateCollControls(await r.json());
   }catch(e){ $('#err').textContent=String(e); }
+  refresh();
 });
 
 // Start/stop background collection (stopping drops connections so the endpoint can sleep).
@@ -651,6 +675,7 @@ $('#collToggle').addEventListener('click', async ()=>{
     updateCollControls(await r.json());
   }catch(e){ $('#err').textContent=String(e); }
   finally{ btn.disabled=false; }
+  refresh();
 });
 
 // Force an immediate snapshot of every enabled target, then refresh the charts.
@@ -679,11 +704,32 @@ function setupResizeObservers(){
   });
 }
 
+// Drag a time range on the AAS chart to drill every panel into that window; double-click resets.
+function setupChartSelect(){
+  const gd=document.getElementById('ashTimeline');
+  if(!gd || !gd.on) return;
+  gd.on('plotly_relayout', ev=>{
+    if(ev['xaxis.autorange'] || ev['autosize']){          // double-click / reset -> back to Window
+      if(SEL){ SEL=null; updateWindowControl(); refresh(); }
+      return;
+    }
+    const a=ev['xaxis.range[0]'], b=ev['xaxis.range[1]'];
+    if(a==null || b==null) return;
+    const f=new Date(a).getTime(), t=new Date(b).getTime();
+    if(!(t>f)) return;
+    if(Math.abs(f-LAST_START)<1500 && Math.abs(t-LAST_END)<1500) return;  // ignore our own range set
+    SEL={from:Math.round(f/1000), to:Math.round(t/1000)};
+    updateWindowControl();
+    refresh();
+  });
+}
+
 (async function init(){
   await loadTargets();
   await refresh();
   setupAutoRefresh();
   setupResizeObservers();
+  setupChartSelect();
 })();
 </script>
 </body>

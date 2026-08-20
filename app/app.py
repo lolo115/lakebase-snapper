@@ -11,8 +11,9 @@ import json
 import logging
 import os
 from contextlib import asynccontextmanager
+from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -189,22 +190,28 @@ def _require_target(target_id: int):
         raise HTTPException(404, "unknown target_id")
 
 
+# Absolute-window params (epoch seconds): when both `from` and `to` are supplied (e.g. a
+# range selected on the AAS chart), queries use [from, to] instead of "last `mins`".
+# `from` is aliased since it's a Python keyword.
 @app.get("/api/summary")
-def api_summary(target_id: int, mins: int = 60):
+def api_summary(target_id: int, mins: int = 60, frm: Optional[float] = Query(None, alias="from"),
+                to: Optional[float] = None):
     _require_target(target_id)
-    return repo.summary(target_id, mins)
+    return repo.summary(target_id, mins, frm=frm, to=to)
 
 
 @app.get("/api/ash-timeline")
-def api_ash_timeline(target_id: int, mins: int = 60, bucket: int = 10):
+def api_ash_timeline(target_id: int, mins: int = 60, bucket: int = 10,
+                     frm: Optional[float] = Query(None, alias="from"), to: Optional[float] = None):
     _require_target(target_id)
-    return repo.ash_timeline(target_id, mins, bucket)
+    return repo.ash_timeline(target_id, mins, bucket, frm=frm, to=to)
 
 
 @app.get("/api/cu-timeline")
-def api_cu_timeline(target_id: int, mins: int = 60):
+def api_cu_timeline(target_id: int, mins: int = 60,
+                    frm: Optional[float] = Query(None, alias="from"), to: Optional[float] = None):
     _require_target(target_id)
-    return repo.cu_timeline(target_id, mins)
+    return repo.cu_timeline(target_id, mins, frm=frm, to=to)
 
 
 @app.get("/api/cu-current")
@@ -214,11 +221,12 @@ def api_cu_current(target_id: int):
 
 
 @app.get("/api/conn-timeline")
-def api_conn_timeline(target_id: int, mins: int = 60, bucket: int = 10):
+def api_conn_timeline(target_id: int, mins: int = 60, bucket: int = 10,
+                      frm: Optional[float] = Query(None, alias="from"), to: Optional[float] = None):
     """Average client connection count (active + idle) per bucket, so the AAS chart can plot
     the connection count over time (the ramp), not just a current value."""
     _require_target(target_id)
-    return repo.conn_timeline(target_id, mins, bucket)
+    return repo.conn_timeline(target_id, mins, bucket, frm=frm, to=to)
 
 
 @app.get("/api/conn-count")
@@ -237,33 +245,38 @@ def api_conn_count(target_id: int):
 
 
 @app.get("/api/waits")
-def api_waits(target_id: int, mins: int = 60, include_idle: bool = False):
+def api_waits(target_id: int, mins: int = 60, include_idle: bool = False,
+              frm: Optional[float] = Query(None, alias="from"), to: Optional[float] = None):
     _require_target(target_id)
-    return repo.wait_mix(target_id, mins, include_idle)
+    return repo.wait_mix(target_id, mins, include_idle, frm=frm, to=to)
 
 
 @app.get("/api/top-sql")
-def api_top_sql(target_id: int, mins: int = 60, limit: int = 10):
+def api_top_sql(target_id: int, mins: int = 60, limit: int = 10,
+                frm: Optional[float] = Query(None, alias="from"), to: Optional[float] = None):
     _require_target(target_id)
-    return repo.top_sql_ash(target_id, mins, limit)
+    return repo.top_sql_ash(target_id, mins, limit, frm=frm, to=to)
 
 
 @app.get("/api/sessions")
-def api_sessions(target_id: int, mins: int = 60, limit: int = 25):
+def api_sessions(target_id: int, mins: int = 60, limit: int = 25,
+                 frm: Optional[float] = Query(None, alias="from"), to: Optional[float] = None):
     _require_target(target_id)
-    return repo.sessions(target_id, mins, limit)
+    return repo.sessions(target_id, mins, limit, frm=frm, to=to)
 
 
 @app.get("/api/load-profile")
-def api_load_profile(target_id: int, mins: int = 240):
+def api_load_profile(target_id: int, mins: int = 240,
+                     frm: Optional[float] = Query(None, alias="from"), to: Optional[float] = None):
     _require_target(target_id)
-    return repo.load_profile(target_id, mins)
+    return repo.load_profile(target_id, mins, frm=frm, to=to)
 
 
 @app.get("/api/snap-diff")
-def api_snap_diff(target_id: int, mins: int = 60, limit: int = 12):
+def api_snap_diff(target_id: int, mins: int = 60, limit: int = 12,
+                  frm: Optional[float] = Query(None, alias="from"), to: Optional[float] = None):
     _require_target(target_id)
-    return repo.latest_snap_diff(target_id, mins, limit)
+    return repo.latest_snap_diff(target_id, mins, limit, frm=frm, to=to)
 
 
 # ----------------------------------------------------------------- static UI

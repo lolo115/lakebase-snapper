@@ -136,14 +136,27 @@ def purge_older_than(days):
 
 
 # ------------------------------------------------------------------ chart queries
-def ash_timeline(target_id, since_min, bucket_secs):
+def _win(col, p, frm, to, since_min):
+    """Add window params to dict `p` and return the SQL time predicate for column `col`.
+    Absolute window (frm/to epoch seconds) when both are given, else last `since_min`."""
+    if frm is not None and to is not None:
+        p["f"] = float(frm)
+        p["u"] = float(to)
+        return f"{col} >= to_timestamp(%(f)s) AND {col} <= to_timestamp(%(u)s)"
+    p["m"] = since_min
+    return f"{col} >= now() - make_interval(mins => %(m)s)"
+
+
+def ash_timeline(target_id, since_min, bucket_secs, frm=None, to=None):
     """AAS by wait_class per time bucket -> stacked area."""
-    sql = """
+    p = {"t": target_id, "b": bucket_secs}
+    pred = _win("sample_time", p, frm, to, since_min)
+    sql = f"""
     WITH s AS (
       SELECT date_bin(make_interval(secs => %(b)s), sample_time, 'epoch') AS bucket,
              sample_time, wait_class
       FROM ash_samples
-      WHERE target_id=%(t)s AND sample_time >= now() - make_interval(mins => %(m)s)
+      WHERE target_id=%(t)s AND {pred}
         AND state <> 'idle'
     ),
     n AS (SELECT bucket, count(DISTINCT sample_time) nsamp FROM s GROUP BY 1)
@@ -156,18 +169,20 @@ def ash_timeline(target_id, since_min, bucket_secs):
     """
     with repo_pool.connection() as conn:
         return [dict(zip(("bucket", "wait_class", "aas"), r))
-                for r in conn.execute(sql, {"t": target_id, "m": since_min, "b": bucket_secs}).fetchall()]
+                for r in conn.execute(sql, p).fetchall()]
 
 
-def conn_timeline(target_id, since_min, bucket_secs):
+def conn_timeline(target_id, since_min, bucket_secs, frm=None, to=None):
     """Average client connection count (active + idle) per time bucket, derived from ASH
     samples (each poll captures every session), so the connection ramp is visible over time."""
-    sql = """
+    p = {"t": target_id, "b": bucket_secs}
+    pred = _win("sample_time", p, frm, to, since_min)
+    sql = f"""
     WITH s AS (
       SELECT date_bin(make_interval(secs => %(b)s), sample_time, 'epoch') AS bucket,
              sample_time, pid
       FROM ash_samples
-      WHERE target_id=%(t)s AND sample_time >= now() - make_interval(mins => %(m)s)
+      WHERE target_id=%(t)s AND {pred}
     ),
     per_sample AS (
       SELECT bucket, sample_time, count(DISTINCT pid) c FROM s GROUP BY bucket, sample_time
@@ -178,10 +193,10 @@ def conn_timeline(target_id, since_min, bucket_secs):
     """
     with repo_pool.connection() as conn:
         return [dict(zip(("bucket", "conns"), r))
-                for r in conn.execute(sql, {"t": target_id, "m": since_min, "b": bucket_secs}).fetchall()]
+                for r in conn.execute(sql, p).fetchall()]
 
 
-def wait_mix(target_id, since_min, include_idle=False):
+def wait_mix(target_id, since_min, include_idle=False, frm=None, to=None):
     """Wait-class mix over the window. Default excludes fully-idle sessions (the classic
     active-only pie). With include_idle=True, idle / idle-in-transaction samples are kept
     and relabelled as their own classes so the pie also shows idle time."""
@@ -193,30 +208,34 @@ def wait_mix(target_id, since_min, include_idle=False):
     else:
         cls = "wait_class"
         idle_filter = "AND state <> 'idle'"
+    p = {"t": target_id}
+    pred = _win("sample_time", p, frm, to, since_min)
     sql = f"""
     SELECT {cls} AS wait_class, wait_event, count(*) c
     FROM ash_samples
-    WHERE target_id=%s AND sample_time >= now() - make_interval(mins => %s)
+    WHERE target_id=%(t)s AND {pred}
       {idle_filter}
     GROUP BY 1,2 ORDER BY c DESC
     """
     with repo_pool.connection() as conn:
         return [dict(zip(("wait_class", "wait_event", "c"), r))
-                for r in conn.execute(sql, (target_id, since_min)).fetchall()]
+                for r in conn.execute(sql, p).fetchall()]
 
 
-def top_sql_ash(target_id, since_min, limit=10):
+def top_sql_ash(target_id, since_min, limit=10, frm=None, to=None):
     """Active-sample breakdown by wait class (CPU = on-CPU) for the top `limit` queries.
 
     Returns flat rows [{query_id, wait_class, c, query}] for the top queries by total
     active samples, so the UI can stack CPU time vs each wait class per SQL. Estimated
     active time per segment is c * SAMPLE_INTERVAL_SECS (computed client-side)."""
-    sql = """
+    p = {"t": target_id, "l": limit}
+    pred = _win("sample_time", p, frm, to, since_min)
+    sql = f"""
     WITH win AS (
       SELECT query_id, COALESCE(datname,'?') AS datname,
              COALESCE(wait_class,'CPU') AS klass, query
       FROM ash_samples
-      WHERE target_id=%(t)s AND sample_time >= now() - make_interval(mins => %(m)s)
+      WHERE target_id=%(t)s AND {pred}
         AND query_id IS NOT NULL AND state <> 'idle'
     ),
     top AS (
@@ -231,19 +250,21 @@ def top_sql_ash(target_id, since_min, limit=10):
     """
     with repo_pool.connection() as conn:
         return [dict(zip(("query_id", "datname", "wait_class", "c", "query"), r))
-                for r in conn.execute(sql, {"t": target_id, "m": since_min, "l": limit}).fetchall()]
+                for r in conn.execute(sql, p).fetchall()]
 
 
-def sessions(target_id, since_min, limit=25):
+def sessions(target_id, since_min, limit=25, frm=None, to=None):
     """Per-session details observed over the window (Oracle-EM-style session list):
     one row per backend pid with its identity, activity, last state/wait, and last query."""
-    sql = """
+    p = {"t": target_id, "l": limit}
+    pred = _win("sample_time", p, frm, to, since_min)
+    sql = f"""
     WITH s AS (
       SELECT pid, usename, application_name, client_addr, datname, backend_type,
              state, wait_class, wait_event,
              left(regexp_replace(query, '\\s+', ' ', 'g'), 200) query, sample_time
       FROM ash_samples
-      WHERE target_id=%(t)s AND sample_time >= now() - make_interval(mins => %(m)s)
+      WHERE target_id=%(t)s AND {pred}
         AND pid IS NOT NULL
     )
     SELECT pid,
@@ -265,30 +286,33 @@ def sessions(target_id, since_min, limit=25):
             "samples", "active_samples", "last_state", "last_wait_class", "last_wait_event",
             "last_query", "last_seen")
     with repo_pool.connection() as conn:
-        return [dict(zip(cols, r))
-                for r in conn.execute(sql, {"t": target_id, "m": since_min, "l": limit}).fetchall()]
+        return [dict(zip(cols, r)) for r in conn.execute(sql, p).fetchall()]
 
 
-def summary(target_id, since_min):
-    sql = """
+def summary(target_id, since_min, frm=None, to=None):
+    p = {"t": target_id}
+    pred = _win("sample_time", p, frm, to, since_min)
+    sql = f"""
     SELECT count(*) total_rows,
            count(DISTINCT sample_time) samples,
            round(count(*)::numeric / NULLIF(count(DISTINCT sample_time),0), 2) aas,
            min(sample_time), max(sample_time)
     FROM ash_samples
-    WHERE target_id=%s AND sample_time >= now() - make_interval(mins => %s)
+    WHERE target_id=%(t)s AND {pred}
       AND state <> 'idle'
     """
     with repo_pool.connection() as conn:
-        r = conn.execute(sql, (target_id, since_min)).fetchone()
+        r = conn.execute(sql, p).fetchone()
     return {"total_rows": r[0] or 0, "samples": r[1] or 0, "aas": float(r[2] or 0),
             "first": r[3].isoformat() if r[3] else None,
             "last": r[4].isoformat() if r[4] else None}
 
 
-def load_profile(target_id, since_min):
+def load_profile(target_id, since_min, frm=None, to=None):
     """Per-interval system rates derived from consecutive snapshots."""
-    sql = """
+    p = {"t": target_id}
+    pred = _win("snap_time", p, frm, to, since_min)
+    sql = f"""
     WITH s AS (
       SELECT snap_time,
              (sys->'db'->>'xact_commit')::bigint xc,
@@ -299,7 +323,7 @@ def load_profile(target_id, since_min):
              (sys->'lfc'->>'hits')::bigint lh,
              (sys->'lfc'->>'misses')::bigint lm
       FROM snapshots
-      WHERE target_id=%s AND snap_time >= now() - make_interval(mins => %s)
+      WHERE target_id=%(t)s AND {pred}
       ORDER BY snap_time
     ),
     d AS (
@@ -326,24 +350,26 @@ def load_profile(target_id, since_min):
     with repo_pool.connection() as conn:
         return [dict(zip(("t", "tps", "cache_hit_pct", "lfc_hit_pct",
                           "temp_bytes_per_s", "tup_returned_per_s"), r))
-                for r in conn.execute(sql, (target_id, since_min)).fetchall()]
+                for r in conn.execute(sql, p).fetchall()]
 
 
-def cu_timeline(target_id, since_min):
+def cu_timeline(target_id, since_min, frm=None, to=None):
     """Configured autoscaling CU (upper bound) captured at each snapshot, for overlaying
     on the AAS chart. Returns [{t, max_cu, min_cu}] ordered by time."""
-    sql = """
+    p = {"t": target_id}
+    pred = _win("snap_time", p, frm, to, since_min)
+    sql = f"""
     SELECT to_char(snap_time AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') t,
            (sys->'cu'->>'max')::float max_cu,
            (sys->'cu'->>'min')::float min_cu
     FROM snapshots
-    WHERE target_id=%s AND snap_time >= now() - make_interval(mins => %s)
+    WHERE target_id=%(t)s AND {pred}
       AND sys ? 'cu'
     ORDER BY snap_time
     """
     with repo_pool.connection() as conn:
         return [dict(zip(("t", "max_cu", "min_cu"), r))
-                for r in conn.execute(sql, (target_id, since_min)).fetchall()]
+                for r in conn.execute(sql, p).fetchall()]
 
 
 def current_max_cu(target_id):
@@ -363,14 +389,15 @@ def current_max_cu(target_id):
     return {"max_cu": float(r[0]) if r and r[0] is not None else None}
 
 
-def latest_snap_diff(target_id, since_min=60, limit=12):
+def latest_snap_diff(target_id, since_min=60, limit=12, frm=None, to=None):
     """Top SQL by execution-time delta between the first and last snapshot in the
     selected window (so it tracks the dashboard's time-window selector)."""
+    p = {"t": target_id}
+    pred = _win("snap_time", p, frm, to, since_min)
     with repo_pool.connection() as conn:
         ids = conn.execute(
-            "SELECT snap_id, snap_time FROM snapshots WHERE target_id=%s "
-            "AND snap_time >= now() - make_interval(mins => %s) ORDER BY snap_time",
-            (target_id, since_min)).fetchall()
+            f"SELECT snap_id, snap_time FROM snapshots WHERE target_id=%(t)s "
+            f"AND {pred} ORDER BY snap_time", p).fetchall()
         if len(ids) < 2:
             return {"available": False}
         from_id, from_t = ids[0]
