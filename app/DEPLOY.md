@@ -340,8 +340,8 @@ Runtime-added targets persist in the repo `targets` table. `SEED_TARGETS` is onl
 | `SAMPLE_INTERVAL_SECS` | `2` | ASH poll interval per target |
 | `SNAPSHOT_INTERVAL_SECS` | `300` | Cumulative-counter snapshot interval |
 | `RETENTION_DAYS` | `7` | Age at which samples/snapshots are purged (6-hourly job) |
-| `INCLUDE_IDLE_IN_TXN` | `false` | Also sample `idle in transaction` sessions |
-| `INCLUDE_IDLE` | `true` | Also sample fully-idle sessions (feeds the "wait class mix (incl. idle)" pie) |
+| `INCLUDE_IDLE_IN_TXN` | `true` | Sample idle-in-transaction sessions (the "Idle in txn" pie slice) |
+| `INCLUDE_IDLE` | `false` | Sample benign plain-idle sessions (not shown in the UI) |
 
 Lower `SAMPLE_INTERVAL_SECS` for finer ASH resolution (more rows, more load); raise
 `SNAPSHOT_INTERVAL_SECS` to reduce overhead. Change in `app.yaml` and redeploy.
@@ -392,8 +392,8 @@ PGPASSWORD=$TOKEN psql "host=$HOST port=5432 dbname=postgres user=$EMAIL sslmode
 | `PGUSER` | yes | App SP client-id = its Postgres role name |
 | `SEED_TARGETS` | yes | JSON array of `{label, endpoint, dbname}` |
 | `SAMPLE_INTERVAL_SECS` / `SNAPSHOT_INTERVAL_SECS` / `RETENTION_DAYS` | no | Cadence + retention |
-| `INCLUDE_IDLE_IN_TXN` | no | Sample idle-in-transaction sessions |
-| `INCLUDE_IDLE` | no | Also sample fully-idle sessions (idle pie); default on |
+| `INCLUDE_IDLE_IN_TXN` | no | Sample idle-in-transaction sessions (Idle-in-txn pie); default on |
+| `INCLUDE_IDLE` | no | Sample benign plain-idle sessions; default off (not shown) |
 | `INSTANCE_CONNECT_DB` | no | DB the instance-wide `*` target connects through (default `postgres`) |
 
 Local runs (`run_local.sh`) use your own identity via the CLI profile instead of the SP, so
