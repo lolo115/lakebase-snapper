@@ -452,11 +452,13 @@ function renderTopSql(rows, intervalSecs){
     type:'scatter', mode:'markers', x:[null], y:[null], name:k,
     marker:{size:10, color:colorFor(k), symbol:'square'}, showlegend:true, hoverinfo:'skip'
   }));
-  Plotly.react('topSql', traces.length?traces:[{x:[],y:[]}],
+  Plotly.react('topSql', traces.length?traces:[{x:[],y:[],type:'scatter'}],
     {...LAYOUT, margin:{l:280,r:120,t:10,b:40},
      legend:{orientation:'v', x:1.01, xanchor:'left', y:1, yanchor:'top', font:{size:11}},
-     xaxis:{...LAYOUT.xaxis,title:'active time (s, est.)',rangemode:'tozero'},
-     yaxis:{...LAYOUT.yaxis, automargin:true, tickfont:{size:10}, tickmode:'array',
+     // Pin both axis types: on a re-render (e.g. switching target) Plotly can otherwise
+     // auto-detect the x-axis as dates and render the second-values as years (~1970+).
+     xaxis:{...LAYOUT.xaxis,title:'active time (s, est.)',type:'linear',rangemode:'tozero'},
+     yaxis:{...LAYOUT.yaxis, type:'linear', automargin:true, tickfont:{size:10}, tickmode:'array',
             tickvals:items.map((_,i)=>i), ticktext:labels,
             range:[-0.6, Math.max(items.length-0.4, 0.6)]}}, CONFIG);
 }
