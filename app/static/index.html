@@ -62,7 +62,7 @@
   .plot.lg{height:440px}
   .plot.md{height:360px}
   .scrollbox{overflow:auto;width:100%;height:440px}
-  #sessions td{white-space:nowrap}
+  #sessions td, #snapDiff td, #snapDiff th{white-space:nowrap}
   .pill{display:inline-flex;align-items:center;gap:7px;font-size:12px;padding:6px 11px;
         border-radius:20px;border:1px solid var(--line);background:var(--panel2)}
   .pill::before{content:'';width:8px;height:8px;border-radius:50%;background:var(--other)}
@@ -129,13 +129,9 @@
     <div id="waitMixIdle" class="plot md"></div>
   </div>
 
-  <div class="card col6">
+  <div class="card col12">
     <h2>Top SQL by CPU &amp; wait time (ASH)</h2>
     <div class="scrollbox"><div id="topSql" style="min-width:620px;height:440px"></div></div>
-  </div>
-  <div class="card col6">
-    <h2>Sessions (window)</h2>
-    <div class="scrollbox" id="sessions"></div>
   </div>
 
   <div class="card col12">
@@ -143,13 +139,19 @@
     <div id="loadProfile" class="plot md"></div>
   </div>
 
-  <div class="card col12">
+  <div class="card col6">
     <h2>Latest snapshot diff: top SQL by execution time</h2>
     <div id="snapDiffMeta" class="muted" style="margin-bottom:8px"></div>
-    <table id="snapDiff"><thead><tr>
-      <th>% time</th><th>exec ms</th><th>calls</th><th>ms/call</th><th>rows</th>
-      <th>db</th><th>query_id</th><th>query</th>
-    </tr></thead><tbody></tbody></table>
+    <div class="scrollbox" style="height:404px">
+      <table id="snapDiff"><thead><tr>
+        <th>% time</th><th>exec ms</th><th>calls</th><th>ms/call</th><th>rows</th>
+        <th>db</th><th>query_id</th><th>query</th>
+      </tr></thead><tbody></tbody></table>
+    </div>
+  </div>
+  <div class="card col6">
+    <h2>Sessions (window)</h2>
+    <div class="scrollbox" id="sessions"></div>
   </div>
 </main>
 
@@ -478,7 +480,7 @@ function renderTopSql(rows, intervalSecs){
   }));
   // Grow the plot with the number of rows so it scrolls vertically inside the scrollbox
   // (min-width on the div drives horizontal scroll when the pane is narrow).
-  document.getElementById('topSql').style.height = Math.max(440, items.length*48) + 'px';
+  document.getElementById('topSql').style.height = Math.max(440, items.length*44) + 'px';
   Plotly.react('topSql', traces.length?traces:[{x:[],y:[],type:'scatter'}],
     {...LAYOUT, margin:{l:280,r:120,t:10,b:40},
      legend:{orientation:'v', x:1.01, xanchor:'left', y:1, yanchor:'top', font:{size:11}},
