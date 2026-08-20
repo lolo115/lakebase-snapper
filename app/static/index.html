@@ -714,8 +714,17 @@ function setupResizeObservers(){
 function setupChartSelect(){
   const gd=document.getElementById('ashTimeline');
   if(!gd || !gd.on) return;
+  let justReset=false;
+  // Double-click is the authoritative reset: the chart has an explicit x-range, so a
+  // double-click emits reset range VALUES (not autorange:true) which the relayout handler
+  // below would misread; handle it here and ignore the accompanying relayout.
+  gd.on('plotly_doubleclick', ()=>{
+    justReset=true; setTimeout(()=>{ justReset=false; }, 400);
+    if(SEL){ SEL=null; updateWindowControl(); refresh(); }
+  });
   gd.on('plotly_relayout', ev=>{
-    if(ev['xaxis.autorange'] || ev['autosize']){          // double-click / reset -> back to Window
+    if(justReset) return;                                 // ignore the double-click reset relayout
+    if(ev['xaxis.autorange'] || ev['autosize']){
       if(SEL){ SEL=null; updateWindowControl(); refresh(); }
       return;
     }
