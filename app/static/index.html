@@ -74,6 +74,9 @@
   .pill.off{color:var(--muted)} .pill.off::before{background:var(--muted)}
   button.go{background:#238636;border-color:#238636;color:#fff;font-weight:600}
   button.go:hover{background:#2ea043;border-color:#2ea043}
+  .hbar{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  button.chip{font-size:11px;padding:3px 9px;border-radius:6px;text-transform:none;
+              letter-spacing:normal;font-weight:500}
   #err{color:var(--lock);font-size:12px}
   /* Fixed width + nowrap so the changing "updated …" text never reflows the header. */
   #status{min-width:170px;white-space:nowrap;font-size:12px}
@@ -140,7 +143,8 @@
   </div>
 
   <div class="card col6">
-    <h2>Average Active Sessions by wait class</h2>
+    <h2 class="hbar"><span>Average Active Sessions by wait class</span>
+      <button id="toggleConn" class="chip" title="Show/hide the connections line and rescale">Hide connections</button></h2>
     <div id="ashTimeline" class="plot md"></div>
   </div>
   <div class="card col3">
@@ -251,6 +255,7 @@ const CONFIG = {displayModeBar:false,responsive:true};
 const $ = s=>document.querySelector(s);
 let timer=null;
 let TARGETS=[];
+let SHOW_CONN=true;   // toggled by the "Hide/Show connections" button on the AAS chart
 
 function activeTarget(){ return TARGETS.find(t=>t.id===tid()); }
 
@@ -427,7 +432,7 @@ function renderTimeline(rows, cuSeries, cuNow, conn, mins){
   }
   // Connection count (active + idle) over time on a secondary right axis, so the ramp is
   // visible (its scale differs from AAS/CU, so it gets its own axis). Derived from ASH.
-  if(conn && conn.length){
+  if(SHOW_CONN && conn && conn.length){
     const cidx={}; conn.forEach(r=>{ cidx[new Date(r.bucket).getTime()]=Number(r.conns); });
     traces.push({
       x:gx, y:grid.map(b=> cidx[b]!==undefined ? cidx[b] : null),
@@ -616,6 +621,13 @@ $('#mins').addEventListener('change',()=>{
 $('#minsCustom').addEventListener('change',refresh);
 $('#refresh').addEventListener('change',setupAutoRefresh);
 $('#reload').addEventListener('click',refresh);
+
+// Show/hide the connections line on the AAS chart and rescale to the remaining series.
+$('#toggleConn').addEventListener('click',()=>{
+  SHOW_CONN=!SHOW_CONN;
+  $('#toggleConn').textContent = SHOW_CONN?'Hide connections':'Show connections';
+  refresh();
+});
 
 // Change the ASH data-collection frequency at runtime.
 $('#sampleInterval').addEventListener('change', async ()=>{
