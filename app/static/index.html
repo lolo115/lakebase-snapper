@@ -360,7 +360,7 @@ async function refresh(){
     renderWaitMix(wmIdle, 'waitMixIdle');
     renderTopSql(ts, st.sample_interval_secs);
     renderSessions(se, st.sample_interval_secs);
-    renderLoadProfile(lp);
+    renderLoadProfile(lp, startMs, endMs);
     renderSnapDiff(sd);
     $('#status').textContent='updated '+new Date().toLocaleTimeString();
   }catch(e){ $('#err').textContent=String(e); $('#status').textContent=''; }
@@ -547,7 +547,7 @@ function renderTopSql(rows, intervalSecs){
             range:[-0.6, Math.max(items.length-0.4, 0.6)]}}, CONFIG);
 }
 
-function renderLoadProfile(rows){
+function renderLoadProfile(rows, startMs, endMs){
   const x=rows.map(r=>r.t);
   Plotly.react('loadProfile', [
     {x,y:rows.map(r=>r.tps),name:'tps',type:'scatter',mode:'lines+markers',
@@ -561,6 +561,8 @@ function renderLoadProfile(rows){
       // Wider right margin + automargin on the right axis keeps its title clear of the
       // tick numbers; a fixed [0,100] range with a % suffix shows a full "100%" at the top.
       margin:{l:52,r:64,t:10,b:36},
+      // Pin the time axis to the same window as the other charts so scales align.
+      xaxis:{...LAYOUT.xaxis, range:[new Date(startMs), new Date(endMs)]},
       yaxis:{...LAYOUT.yaxis,title:'tps',rangemode:'tozero',automargin:true},
       yaxis2:{overlaying:'y',side:'right',title:{text:'cache hit %',standoff:8},
               range:[0,100],dtick:20,ticksuffix:'%',automargin:true,
