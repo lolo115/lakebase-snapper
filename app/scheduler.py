@@ -17,9 +17,10 @@ log = logging.getLogger("lakebase_snapper.scheduler")
 SAMPLE_INTERVAL = float(os.environ.get("SAMPLE_INTERVAL_SECS", "2"))
 SNAPSHOT_INTERVAL = float(os.environ.get("SNAPSHOT_INTERVAL_SECS", "300"))
 RETENTION_DAYS = int(os.environ.get("RETENTION_DAYS", "7"))
-INCLUDE_IDLE_IN_TXN = os.environ.get("INCLUDE_IDLE_IN_TXN", "false").lower() == "true"
-# Also sample fully-idle sessions so the "wait class mix (incl. idle)" pie has data.
-INCLUDE_IDLE = os.environ.get("INCLUDE_IDLE", "true").lower() == "true"
+# Sample idle-in-transaction sessions (they hold locks/snapshots) for the "incl. idle" pie.
+INCLUDE_IDLE_IN_TXN = os.environ.get("INCLUDE_IDLE_IN_TXN", "true").lower() == "true"
+# Plain-idle sessions are benign pool connections and are not shown, so off by default.
+INCLUDE_IDLE = os.environ.get("INCLUDE_IDLE", "false").lower() == "true"
 
 # When paused, the ticks no-op and the target connections are dropped, so a scale-to-zero
 # endpoint isn't held awake by the collector.
