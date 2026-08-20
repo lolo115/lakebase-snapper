@@ -257,6 +257,7 @@ let timer=null;
 let TARGETS=[];
 let SHOW_CONN=true;   // toggled by the "Hide/Show connections" button on the AAS chart
 let SEL=null;         // {from,to} epoch seconds when a range is selected on the AAS chart
+let PREV_WIN='60';    // Window value to restore when a chart selection is cleared
 let LAST_START=0, LAST_END=0;  // last drawn window (ms), to ignore our own zoom relayouts
 
 function activeTarget(){ return TARGETS.find(t=>t.id===tid()); }
@@ -316,7 +317,12 @@ function updateWindowControl(){
     opt.textContent='Selection ('+new Date(SEL.from*1000).toLocaleTimeString()+' to '+
                     new Date(SEL.to*1000).toLocaleTimeString()+')';
     sel.value='selection'; $('#minsCustom').style.display='none';
-  } else if(opt){ opt.remove(); }
+  } else {
+    if(opt) opt.remove();
+    // restore a valid Window value so mins() doesn't go NaN after the option is removed
+    sel.value = [...sel.options].some(o=>o.value===PREV_WIN) ? PREV_WIN : '60';
+    $('#minsCustom').style.display = (sel.value==='custom') ? 'inline-block' : 'none';
+  }
 }
 
 async function refresh(){
@@ -718,6 +724,7 @@ function setupChartSelect(){
     const f=new Date(a).getTime(), t=new Date(b).getTime();
     if(!(t>f)) return;
     if(Math.abs(f-LAST_START)<1500 && Math.abs(t-LAST_END)<1500) return;  // ignore our own range set
+    if($('#mins').value!=='selection') PREV_WIN=$('#mins').value;  // remember window to restore on reset
     SEL={from:Math.round(f/1000), to:Math.round(t/1000)};
     updateWindowControl();
     refresh();
