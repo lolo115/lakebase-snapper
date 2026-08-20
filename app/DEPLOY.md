@@ -344,7 +344,9 @@ Runtime-added targets persist in the repo `targets` table. `SEED_TARGETS` is onl
 | `INCLUDE_IDLE` | `true` | Also sample fully-idle sessions (feeds the "wait class mix (incl. idle)" pie) |
 
 Lower `SAMPLE_INTERVAL_SECS` for finer ASH resolution (more rows, more load); raise
-`SNAPSHOT_INTERVAL_SECS` to reduce overhead. Change in `app.yaml` and redeploy.
+`SNAPSHOT_INTERVAL_SECS` to reduce overhead. Change in `app.yaml` and redeploy. The ASH
+sample frequency can also be changed **live** from the dashboard header (**Collection ->
+Sample every**) without a redeploy (in-memory, so it resets to `app.yaml` on restart).
 
 > **Cost / scale-to-zero:** while collecting, the app polls continuously, so a monitored
 > endpoint **won't scale to zero**. Click **Stop auto collection** in the dashboard header to

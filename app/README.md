@@ -39,8 +39,9 @@ includes a custom "last N minutes") shows:
 - **Average Active Sessions by wait class**: stacked AAS over time, with the configured
   **CU ceiling** drawn as a red step line (it steps when the endpoint's CU changes) and a
   **"CPU used (from ASH)"** overlay (average sessions on CPU, a proxy for used vCPU, since
-  the platform's live vCPU metric is not exposed to the app). A dotted **connections (now)**
-  line on a secondary right axis shows the current client connection count (active + idle).
+  the platform's live vCPU metric is not exposed to the app). A dotted **connections** line
+  on a secondary right axis plots the client connection count (active + idle) over time,
+  derived from ASH.
 - **Wait class mix (active)** and **Wait class mix (incl. idle)**: two donuts; the second
   also counts Idle / Idle-in-transaction time.
 - **Top SQL by CPU & wait time**: per statement, active time split into CPU + each wait
@@ -54,9 +55,14 @@ includes a custom "last N minutes") shows:
 - **Latest snapshot diff**: top SQL by execution-time delta between the first and last
   snapshot in the **selected time window**, with a **db** column (maintenance DBs flagged
   the same way). Own queries are excluded here too.
+- **Sessions (window)**: an Oracle-EM-style session list beside the snapshot diff, one row
+  per backend seen in the window (active first), with user, application, database, state,
+  wait, and estimated active time, plus full details (client, pid, last query) on hover.
 
-Header controls: **Snapshot now** (force an immediate snapshot of every enabled target) and
-**Start / Stop auto collection** (see Notes for scale-to-zero).
+The header groups the controls into **Target** (which database to view), **View** (time
+window, auto-refresh rate, and Refresh now — display only, does not change collection), and
+**Collection** (*Sample every* to change the ASH frequency live, *Start/Stop auto collection*
+for scale-to-zero, and *Snapshot now* to force an immediate snapshot).
 
 ## Files
 
@@ -89,9 +95,11 @@ Header controls: **Snapshot now** (force an immediate snapshot of every enabled 
 
 Runtime API: `GET/POST /api/targets`, `POST /api/targets/{id}/enabled`,
 `POST /api/snapshot-now` (force a snapshot), `POST /api/collection` (`{"enabled": true|false}`
-to start/stop collection), plus the chart endpoints (`/api/summary`, `/api/ash-timeline`,
-`/api/waits` [`?include_idle=1`], `/api/top-sql`, `/api/load-profile`, `/api/cu-current`,
-`/api/cu-timeline`, `/api/snap-diff`, `/api/status`, `/api/diag`).
+to start/stop collection), `POST /api/collection-interval` (`{"seconds": N}` to change the
+ASH sample frequency live), plus the chart endpoints (`/api/summary`, `/api/ash-timeline`,
+`/api/waits` [`?include_idle=1`], `/api/top-sql`, `/api/sessions`, `/api/load-profile`,
+`/api/cu-current`, `/api/cu-timeline`, `/api/conn-timeline`, `/api/conn-count`,
+`/api/snap-diff`, `/api/status`, `/api/diag`).
 
 ## One-time service-principal wiring
 
