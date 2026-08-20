@@ -94,6 +94,14 @@
     </select>
     <input id="minsCustom" type="number" min="1" step="1" placeholder="min"
            title="Last N minutes" style="width:78px;display:none">
+    <label class="muted">Collect every</label>
+    <select id="sampleInterval" title="ASH data-collection frequency">
+      <option value="1">1s</option>
+      <option value="2" selected>2s</option>
+      <option value="5">5s</option>
+      <option value="10">10s</option>
+      <option value="30">30s</option>
+    </select>
     <label class="muted">Auto</label>
     <select id="refresh">
       <option value="0">off</option>
@@ -334,6 +342,10 @@ function updateCollControls(st){
   pill.className='pill '+(on?'on':'off');
   btn.textContent = on?'Stop auto collection':'Start auto collection';
   btn.className = on?'danger':'go';
+  if(st && st.sample_interval_secs!=null){
+    const sel=$('#sampleInterval'), v=String(st.sample_interval_secs);
+    if(document.activeElement!==sel && [...sel.options].some(o=>o.value===v)) sel.value=v;
+  }
 }
 
 // Build the CU-ceiling step trace from the per-snapshot cu-timeline. Points are anchored at
@@ -593,6 +605,17 @@ $('#mins').addEventListener('change',()=>{
 $('#minsCustom').addEventListener('change',refresh);
 $('#refresh').addEventListener('change',setupAutoRefresh);
 $('#reload').addEventListener('click',refresh);
+
+// Change the ASH data-collection frequency at runtime.
+$('#sampleInterval').addEventListener('change', async ()=>{
+  const secs=parseFloat($('#sampleInterval').value); $('#err').textContent='';
+  try{
+    const r=await fetch('/api/collection-interval',{method:'POST',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify({seconds:secs})});
+    if(!r.ok) throw new Error('collection-interval -> '+r.status);
+    updateCollControls(await r.json());
+  }catch(e){ $('#err').textContent=String(e); }
+});
 
 // Start/stop background collection (stopping drops connections so the endpoint can sleep).
 $('#collToggle').addEventListener('click', async ()=>{

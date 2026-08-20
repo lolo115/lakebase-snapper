@@ -137,6 +137,20 @@ def resume():
     log.info("collection resumed")
 
 
+def set_sample_interval(secs):
+    """Change the ASH poll frequency at runtime by rescheduling the 'ash' job."""
+    global SAMPLE_INTERVAL
+    try:
+        secs = max(0.5, min(60.0, float(secs)))
+    except (TypeError, ValueError):
+        return status()
+    SAMPLE_INTERVAL = secs
+    if _scheduler:
+        _scheduler.reschedule_job("ash", trigger="interval", seconds=secs)
+        log.info("sample interval set to %.1fs", secs)
+    return status()
+
+
 def status():
     if not _scheduler:
         return {"running": False, "collecting": False, "paused": _paused}

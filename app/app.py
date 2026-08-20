@@ -136,6 +136,16 @@ def api_collection(body: CollectionIn):
     return scheduler.status()
 
 
+class IntervalIn(BaseModel):
+    seconds: float
+
+
+@app.post("/api/collection-interval")
+def api_collection_interval(body: IntervalIn):
+    """Change the ASH sample (collection) frequency at runtime. Returns updated status."""
+    return scheduler.set_sample_interval(body.seconds)
+
+
 @app.get("/api/diag")
 def api_diag():
     """Live connectivity self-test — safe to expose (no secrets), invaluable for debugging."""
